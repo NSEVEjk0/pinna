@@ -27,8 +27,13 @@ export interface PaymentRequest {
   createdAt: string;
   paidAt?: string;
   txHash?: string;
+  /** The chain the settling transfer landed on, remembered per request. */
+  chainId?: number;
+  explorerUrl?: string;
   /** How it was settled: a detected transfer, or marked by hand. */
   settledBy?: "detected" | "marked";
+  /** The name the payer sees on the link, as written when it was created. */
+  hostAlias?: string;
 }
 
 export const REQUEST_STATUSES: RequestStatus[] = ["waiting", "paid", "cancelled"];

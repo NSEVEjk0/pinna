@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePinna } from "@/lib/usePinna";
-import { explorerTxUrl } from "@/lib/tempo";
+import { explorerForRecord } from "@/lib/tempo";
 
 /**
  * Notifications: the things that happened while you were away — most of all,
@@ -66,7 +66,7 @@ export default function NotificationsPage() {
                   <a
                     className="hash-link"
                     style={{ fontSize: "0.8rem" }}
-                    href={explorerTxUrl(network, event.txHash)}
+                    href={explorerForRecord({}, network, event.txHash)}
                     target="_blank"
                     rel="noreferrer"
                   >

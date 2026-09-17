@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { findRepeats, type RepeatCandidate } from "@/lib/duplicates";
 import { isPositiveAmount, groupByRecipient, formatAmount, type PayableRow } from "@/lib/money";
 import { normalizeAlias, requestGreeting } from "@/lib/profile";
-import { paymentConfirmation, reminderMessage } from "@/lib/paylink";
+import { paymentConfirmation, reminderMessage, draftMessage } from "@/lib/paylink";
+import { explorerForRecord } from "@/lib/tempo";
+import { TEMPO_MAINNET, TEMPO_TESTNET } from "@/lib/tempo";
 
 function payment(partial: Partial<RepeatCandidate>): RepeatCandidate {
   return {
@@ -111,22 +113,36 @@ describe("alias and greetings", () => {
 });
 
 describe("payer messages", () => {
-  it("writes a confirmation carrying the reference and the transaction", () => {
+  it("names the requester in the draft message", () => {
+    const text = draftMessage({
+      hostName: "Ckay",
+      partyName: "John",
+      amount: "0.2",
+      reason: "Breakfast",
+      url: "https://pinna.app/pay/req_1?d=x",
+      tokenSymbol: "pathUSD",
+    });
+    expect(text).toContain("Hi John — it's me Ckay.");
+    expect(text).toContain("Please pay up your bill of 0.2 pathUSD for Breakfast.");
+    expect(text).toContain("https://pinna.app/pay/req_1?d=x");
+  });
+
+  it("writes a confirmation naming the requester with the full hash", () => {
     const text = paymentConfirmation({
       payerName: "Stephanie",
-      hostName: "Sophia",
-      amount: "18.00",
-      reason: "Dinner on Friday",
+      hostName: "Ckay",
+      amount: "0.2",
+      reason: "Breakfast",
       tokenSymbol: "pathUSD",
-      txHash: "0xabc",
-      explorerUrl: "https://explore.testnet.tempo.xyz/tx/0xabc",
+      txHash: "0xabc123",
+      explorerUrl: "https://explore.testnet.tempo.xyz/tx/0xabc123",
       reference: "req_123",
     });
-    expect(text).toContain("Stephanie");
-    expect(text).toContain("completed payment");
-    expect(text).toContain("18.00 pathUSD");
+    expect(text).toContain("Hello Ckay — Stephanie here.");
+    expect(text).toContain("completed my payment of 0.2 pathUSD for Breakfast");
+    expect(text).toContain("Transaction hash: 0xabc123");
+    expect(text).toContain("https://explore.testnet.tempo.xyz/tx/0xabc123");
     expect(text).toContain("req_123");
-    expect(text).toContain("https://explore.testnet.tempo.xyz/tx/0xabc");
   });
 
   it("writes a reminder for requests with no link", () => {
@@ -147,5 +163,32 @@ describe("payer messages", () => {
   it("keeps totals exact when a repeat is summed", () => {
     expect(formatAmount(0n)).toBe("0.00");
     expect(isPositiveAmount(formatAmount(0n))).toBe(false);
+  });
+});
+
+describe("transaction links follow the chain they happened on", () => {
+  it("sends a mainnet hash to the mainnet explorer even from the testnet view", () => {
+    const url = explorerForRecord({ chainId: 4217 }, TEMPO_TESTNET, "0xdead");
+    expect(url).toBe("https://explore.tempo.xyz/tx/0xdead");
+  });
+
+  it("sends a testnet hash to the testnet explorer from the mainnet view", () => {
+    const url = explorerForRecord({ chainId: 42431 }, TEMPO_MAINNET, "0xbeef");
+    expect(url).toBe("https://explore.testnet.tempo.xyz/tx/0xbeef");
+  });
+
+  it("prefers an explorer recorded on the row itself", () => {
+    const url = explorerForRecord(
+      { explorerUrl: "https://explore.tempo.xyz/" },
+      TEMPO_TESTNET,
+      "0x1"
+    );
+    expect(url).toBe("https://explore.tempo.xyz/tx/0x1");
+  });
+
+  it("falls back to the current network when nothing was recorded", () => {
+    expect(explorerForRecord({}, TEMPO_TESTNET, "0x2")).toBe(
+      "https://explore.testnet.tempo.xyz/tx/0x2"
+    );
   });
 });

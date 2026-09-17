@@ -114,6 +114,31 @@ export function explorerTxUrl(network: TempoNetwork, hash: string): string {
   return `${network.explorerUrl.replace(/\/+$/, "")}/tx/${hash}`;
 }
 
+/**
+ * Where a recorded transaction lives. A payment made on mainnet keeps pointing
+ * at the mainnet explorer even if the wallet later switches to the testnet, so
+ * a hash never leads to a page that cannot find it.
+ */
+export function explorerForRecord(
+  record: { explorerUrl?: string; chainId?: number },
+  fallback: TempoNetwork,
+  hash: string
+): string {
+  if (record.explorerUrl) {
+    return `${record.explorerUrl.replace(/\/+$/, "")}/tx/${hash}`;
+  }
+  if (record.chainId) {
+    const known =
+      record.chainId === TEMPO_MAINNET.chainId
+        ? TEMPO_MAINNET
+        : record.chainId === TEMPO_TESTNET.chainId
+          ? TEMPO_TESTNET
+          : null;
+    if (known) return explorerTxUrl(known, hash);
+  }
+  return explorerTxUrl(fallback, hash);
+}
+
 export function explorerAddressUrl(network: TempoNetwork, address: string): string {
   return `${network.explorerUrl.replace(/\/+$/, "")}/address/${address}`;
 }

@@ -2,6 +2,7 @@ import { createPublicClient, http, parseAbiItem, decodeEventLog } from "viem";
 import { tempo, tempoModerato } from "viem/chains";
 import type { TempoNetwork } from "./tempo";
 import type { IncomingTransfer } from "./requests";
+import { encodeMemo } from "./memo";
 
 /**
  * Reads from Tempo. Pinna holds no keys: the browser wallet signs, and this
@@ -116,4 +117,62 @@ export async function readTokenBalance(
     functionName: "balanceOf",
     args: [address],
   });
+}
+
+/**
+ * Has this reference already been paid? The memo is indexed, so Tempo can
+ * answer that directly — which is what lets a pay link say "already paid" on
+ * a device that has never seen it before.
+ */
+export async function findTransferByReference(
+  network: TempoNetwork,
+  token: `0x${string}`,
+  to: `0x${string}`,
+  reference: string,
+  options: ReadTransfersOptions = {}
+): Promise<IncomingTransfer | null> {
+  const client = publicClientFor(network);
+  const head = await client.getBlockNumber();
+  const lookback = options.lookbackBlocks ?? 200_000n;
+  const fromBlock = head > lookback ? head - lookback : 0n;
+
+  const memo = encodeMemo(reference);
+  const logs = await client.getLogs({
+    address: token,
+    event: TRANSFER_WITH_MEMO,
+    args: { to, memo },
+    fromBlock,
+    toBlock: head,
+  });
+  if (logs.length === 0) return null;
+
+  const log = logs[logs.length - 1];
+  const decoded = decodeEventLog({
+    abi: [TRANSFER_WITH_MEMO],
+    data: log.data,
+    topics: log.topics,
+  });
+  const args = decoded.args as unknown as {
+    from: `0x${string}`;
+    to: `0x${string}`;
+    value: bigint;
+    memo: string;
+  };
+
+  let timestamp: number | undefined;
+  try {
+    const block = await client.getBlock({ blockNumber: log.blockNumber });
+    timestamp = Number(block.timestamp);
+  } catch {
+    timestamp = undefined;
+  }
+
+  return {
+    from: args.from,
+    to: args.to,
+    amountUnits: args.value,
+    memo: args.memo,
+    txHash: log.transactionHash,
+    timestamp,
+  };
 }

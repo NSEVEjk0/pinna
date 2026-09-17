@@ -73,6 +73,8 @@ export default function SendPage() {
         at: new Date().toISOString(),
         tokenSymbol: token.symbol,
         network: network.name,
+        chainId: network.chainId,
+        explorerUrl: network.explorerUrl,
         rows: ready.map((r) => ({
           name: r.name.trim() || r.address,
           address: r.address,

@@ -182,3 +182,14 @@ The suite covers the parts where a mistake would cost money:
 ---
 
 Built by CK · https://x.com/CRYPTFRANI
+
+## Running it on a server
+
+`scripts/screen-start.sh` builds (if needed) and serves the app inside a
+screen session named `pinna`, with the server in one window and a log tail in
+another:
+
+```bash
+bash scripts/screen-start.sh 3001
+screen -r pinna
+```

@@ -30,6 +30,10 @@ export interface SentList {
   at: string;
   tokenSymbol: string;
   network: string;
+  /** The chain the transfer actually happened on, so links never point
+   *  at the wrong explorer when you later switch networks. */
+  chainId?: number;
+  explorerUrl?: string;
   /** The rows exactly as they were signed, so a receipt can be rebuilt. */
   rows?: SentRowSummary[];
 }

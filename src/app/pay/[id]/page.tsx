@@ -1,24 +1,54 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useConnection, useSendTransactionSync } from "wagmi";
 import { decodePayLink, paymentConfirmation } from "@/lib/paylink";
 import { buildBatch } from "@/lib/batch";
-import { explorerTxUrl } from "@/lib/tempo";
+import { explorerTxUrl, explorerForRecord } from "@/lib/tempo";
 import { shortAddress } from "@/lib/money";
 import { useActiveNetwork } from "@/lib/useActiveNetwork";
 import { downloadReceipt } from "@/lib/receipt";
+import { findTransferByReference } from "@/lib/chain";
 
 /**
  * The public pay page. The whole request travels in the link, so this page
  * needs no server and no account: the payer connects a wallet, presses pay,
  * and the transfer carries the request reference as its memo.
  *
- * Once paid, the payer gets a receipt to keep and a confirmation message they
- * can send straight back to whoever asked.
+ * Once the reference has been paid, the page stops offering a payment and
+ * becomes a receipt — on any device, because the answer comes from the chain,
+ * not from this browser.
  */
+
+interface Settled {
+  txHash: string;
+  at?: string;
+  amount?: string;
+  from?: string;
+}
+
+/** A local memory of payments made from this browser, as a fast path. */
+function readLocalSettlement(id: string): Settled | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`pinna:paid:${id}`);
+    return raw ? (JSON.parse(raw) as Settled) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalSettlement(id: string, settled: Settled): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`pinna:paid:${id}`, JSON.stringify(settled));
+  } catch {
+    // storage blocked — the chain check still covers it
+  }
+}
+
 export default function PayPage({ params }: { params: { id: string } }) {
   const search = useSearchParams();
   const encoded = search.get("d") ?? "";
@@ -26,12 +56,53 @@ export default function PayPage({ params }: { params: { id: string } }) {
   const { network, ensure, onRightChain, pending: switching, error: chainError } = useActiveNetwork();
   const { address, isConnected } = useConnection();
   const { sendTransactionSync } = useSendTransactionSync();
-  const [hash, setHash] = useState("");
+  const [settled, setSettled] = useState<Settled | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [checkingChain, setCheckingChain] = useState(true);
 
   const tokenAddress = (process.env.NEXT_PUBLIC_TIP20 as `0x${string}`) || network.defaultToken.address;
+  const host = payload?.hostName?.trim() || (payload ? shortAddress(payload.to) : "");
+
+  // Fast path: this browser already paid it.
+  useEffect(() => {
+    const local = readLocalSettlement(params.id);
+    if (local) setSettled(local);
+  }, [params.id]);
+
+  // Real answer: has this reference been paid on Tempo?
+  useEffect(() => {
+    if (!payload) {
+      setCheckingChain(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const found = await findTransferByReference(
+          network,
+          tokenAddress,
+          payload.to,
+          params.id
+        );
+        if (!cancelled && found) {
+          setSettled({
+            txHash: found.txHash,
+            at: found.timestamp ? new Date(found.timestamp * 1000).toISOString() : undefined,
+            from: found.from,
+          });
+        }
+      } catch {
+        // the chain could not be read — fall back to the local memory
+      } finally {
+        if (!cancelled) setCheckingChain(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [payload, network, tokenAddress, params.id]);
 
   const batch = useMemo(() => {
     if (!payload) return null;
@@ -62,7 +133,10 @@ export default function PayPage({ params }: { params: { id: string } }) {
         calls: batch.calls,
         feeToken: tokenAddress,
       } as never);
-      setHash(typeof result === "string" ? result : "");
+      const hash = typeof result === "string" ? result : "";
+      const entry = { txHash: hash, at: new Date().toISOString(), from: address ?? undefined };
+      writeLocalSettlement(params.id, entry);
+      setSettled(entry);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The wallet did not complete the payment.");
     } finally {
@@ -85,14 +159,17 @@ export default function PayPage({ params }: { params: { id: string } }) {
     );
   }
 
-  const explorer = hash ? explorerTxUrl(network, hash) : "";
+  const explorer = settled
+    ? explorerForRecord({}, network, settled.txHash)
+    : "";
+
   const confirmation = paymentConfirmation({
     payerName: address ? shortAddress(address, 6, 4) : "me",
-    hostName: payload.hostName,
+    hostName: host,
     amount: payload.amount,
     reason: payload.reason,
     tokenSymbol: payload.token,
-    txHash: hash,
+    txHash: settled?.txHash ?? "",
     explorerUrl: explorer,
     reference: payload.id,
   });
@@ -100,7 +177,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
   return (
     <div className="shell fade-in" style={{ paddingTop: 34, paddingBottom: 40, maxWidth: 720 }}>
       <p className="eyebrow" style={{ margin: "0 0 18px" }}>
-        Request from {payload.hostName || shortAddress(payload.to)}
+        Request from {host}
       </p>
       <h1 className="display" style={{ fontSize: "clamp(2.4rem, 6vw, 3.6rem)", margin: "0 0 6px" }}>
         {payload.amount} <span style={{ color: "var(--sage)" }}>{payload.token}</span>
@@ -123,7 +200,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
         <Row label="Reference" value={payload.id} mono />
       </div>
 
-      {hash ? (
+      {settled ? (
         <div className="panel" style={{ padding: 26, marginTop: 28 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             <span className="check" aria-hidden="true">
@@ -131,37 +208,30 @@ export default function PayPage({ params }: { params: { id: string } }) {
             </span>
             <div>
               <p className="eyebrow" style={{ margin: "0 0 6px" }}>
-                Payment complete
+                Transaction completed
               </p>
               <p style={{ margin: 0, fontSize: "1.05rem" }}>
-                {payload.amount} {payload.token} sent to {payload.hostName || shortAddress(payload.to)}
+                This request has already been paid — {payload.amount} {payload.token} to {host}.
               </p>
             </div>
           </div>
 
+          <p className="faint" style={{ margin: "18px 0 0", fontSize: "0.88rem" }}>
+            Nothing more is owed on this link.
+          </p>
+
           <div className="detail-grid" style={{ marginTop: 22 }}>
-            <div>
-              <p
-                className="faint"
-                style={{ margin: 0, fontSize: "0.68rem", letterSpacing: "0.12em", textTransform: "uppercase" }}
-              >
-                Reference
-              </p>
-              <p className="mono" style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>
-                {payload.id}
-              </p>
-            </div>
-            <div>
-              <p
-                className="faint"
-                style={{ margin: 0, fontSize: "0.68rem", letterSpacing: "0.12em", textTransform: "uppercase" }}
-              >
-                Finalised
-              </p>
-              <p className="mono" style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>
-                {new Date().toISOString().slice(0, 19).replace("T", " ")}
-              </p>
-            </div>
+            <Detail label="Reference" value={payload.id} />
+            <Detail
+              label="Finalised"
+              value={
+                settled.at
+                  ? settled.at.slice(0, 19).replace("T", " ")
+                  : "recorded on Tempo"
+              }
+            />
+            {settled.from ? <Detail label="Paid by" value={settled.from} /> : null}
+            <Detail label="Amount" value={`${payload.amount} ${payload.token}`} />
           </div>
 
           <p style={{ marginTop: 18, fontSize: "0.9rem" }}>
@@ -169,7 +239,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
               Tx
             </span>
             <a className="hash-link" href={explorer} target="_blank" rel="noreferrer">
-              {hash}
+              {settled.txHash}
             </a>
           </p>
 
@@ -183,18 +253,18 @@ export default function PayPage({ params }: { params: { id: string } }) {
                   rows: [
                     {
                       id: params.id,
-                      name: payload.hostName || shortAddress(payload.to),
+                      name: host,
                       address: payload.to,
                       amount: payload.amount,
                       reason: payload.reason,
                     },
                   ],
-                  txHash: hash,
+                  txHash: settled.txHash,
                   explorerUrl: explorer,
-                  at: new Date().toISOString(),
+                  at: settled.at ?? new Date().toISOString(),
                   tokenSymbol: payload.token,
                   network: payload.network,
-                  from: address ?? "",
+                  from: address ?? settled.from ?? "",
                   decimals: network.defaultToken.decimals,
                   note: "This transfer carried the request reference as its memo.",
                 })
@@ -216,7 +286,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
 
           <div className="panel" style={{ padding: 18, marginTop: 22, background: "rgba(244,241,234,0.02)" }}>
             <p className="eyebrow" style={{ margin: "0 0 10px" }}>
-              Send this back
+              Send this back to {host}
             </p>
             <p className="muted" style={{ margin: 0, fontSize: "0.92rem", whiteSpace: "pre-line" }}>
               {confirmation}
@@ -247,7 +317,8 @@ export default function PayPage({ params }: { params: { id: string } }) {
           {error ? <p style={{ color: "#c98b7f", marginTop: 12 }}>{error}</p> : null}
           <p className="faint" style={{ marginTop: 14, fontSize: "0.82rem" }}>
             One signature. The fee is paid in the same stablecoin, and the transfer carries the
-            reference {payload.id}.
+            reference {payload.id}.{" "}
+            {checkingChain ? "Checking Tempo for an earlier payment…" : ""}
           </p>
         </div>
       )}
@@ -275,6 +346,22 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
       <span className={mono ? "mono" : ""} style={{ wordBreak: "break-all", textAlign: "right" }}>
         {value}
       </span>
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p
+        className="faint"
+        style={{ margin: 0, fontSize: "0.68rem", letterSpacing: "0.12em", textTransform: "uppercase" }}
+      >
+        {label}
+      </p>
+      <p className="mono" style={{ margin: "4px 0 0", fontSize: "0.88rem", wordBreak: "break-all" }}>
+        {value}
+      </p>
     </div>
   );
 }

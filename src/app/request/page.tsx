@@ -89,10 +89,13 @@ export default function RequestPage() {
         partyAddress: row.address,
         amount: row.amount,
         reason: row.reason ?? "",
+        hostAlias: fromName.trim() || alias,
         hasLink: choice.link,
         hasPdf: choice.pdf,
         status: "waiting",
         createdAt: at,
+        chainId: network.chainId,
+        explorerUrl: network.explorerUrl,
       };
       saveRequest(request);
       notify({

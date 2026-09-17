@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { usePinna } from "@/lib/usePinna";
-import { explorerTxUrl, type TempoNetwork } from "@/lib/tempo";
+import { explorerForRecord, type TempoNetwork } from "@/lib/tempo";
 import { readIncomingTransfers } from "@/lib/chain";
 import { cancel, findSettlement, markPaid, type PaymentRequest } from "@/lib/requests";
 import { parseAmount } from "@/lib/money";
@@ -86,6 +86,8 @@ export default function HistoryPage() {
         if (!match) return request;
         settled += 1;
         const paid = markPaid(request, { txHash: match.txHash, settledBy: "detected" });
+        paid.chainId = network.chainId;
+        paid.explorerUrl = network.explorerUrl;
         notify(paidEvent(paid, match.txHash));
         return paid;
       });
@@ -114,7 +116,7 @@ export default function HistoryPage() {
         reason: r.reason,
       })),
       txHash: entry.txHash,
-      explorerUrl: entry.txHash ? explorerTxUrl(network, entry.txHash) : "",
+      explorerUrl: entry.txHash ? explorerForRecord(entry, network, entry.txHash) : "",
       at: entry.at,
       tokenSymbol: entry.tokenSymbol,
       network: entry.network,
@@ -138,7 +140,7 @@ export default function HistoryPage() {
         },
       ],
       txHash: request.txHash ?? "—",
-      explorerUrl: request.txHash ? explorerTxUrl(network, request.txHash) : "",
+      explorerUrl: request.txHash ? explorerForRecord(request, network, request.txHash) : "",
       at: request.paidAt ?? request.createdAt,
       tokenSymbol: token.symbol,
       network: network.name,
@@ -264,7 +266,7 @@ export default function HistoryPage() {
                         {entry.txHash ? (
                           <a
                             className="hash-link"
-                            href={explorerTxUrl(network, entry.txHash)}
+                            href={explorerForRecord(entry, network, entry.txHash)}
                             target="_blank"
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}
@@ -323,7 +325,7 @@ export default function HistoryPage() {
                       <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
                         <a
                           className="link"
-                          href={explorerTxUrl(network, entry.txHash)}
+                          href={explorerForRecord(entry, network, entry.txHash)}
                           target="_blank"
                           rel="noreferrer"
                           style={{ fontSize: "0.88rem" }}
@@ -399,6 +401,8 @@ export default function HistoryPage() {
                   onCancel={() => saveRequest(cancel(request))}
                   onMarkPaid={() => {
                     const paid = markPaid(request, { settledBy: "marked" });
+                    paid.chainId = network.chainId;
+                    paid.explorerUrl = network.explorerUrl;
                     saveRequest(paid);
                     notify(paidEvent(paid));
                   }}
@@ -509,7 +513,7 @@ function RequestRow({
               <a
                 className="hash-link"
                 style={{ fontSize: "0.78rem" }}
-                href={explorerTxUrl(network, request.txHash!)}
+                href={explorerForRecord(request, network, request.txHash!)}
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
@@ -542,7 +546,7 @@ function RequestRow({
               </span>
               <a
                 className="hash-link"
-                href={explorerTxUrl(network, request.txHash!)}
+                href={explorerForRecord(request, network, request.txHash!)}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -581,7 +585,7 @@ function RequestRow({
                 href={payLinkUrl("/", {
                   id: request.id,
                   to: request.hostAddress,
-                  hostName: hostAlias ?? "",
+                  hostName: request.hostAlias ?? hostAlias ?? "",
                   amount: request.amount,
                   reason: request.reason,
                   token: "USD",

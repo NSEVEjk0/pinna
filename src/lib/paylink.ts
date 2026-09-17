@@ -84,11 +84,12 @@ export function draftMessage(input: {
   tokenSymbol: string;
 }): string {
   const who = input.hostName?.trim();
-  const opening = who ? `Hi ${input.partyName || "there"} — it's me ${who}.` : `Hi ${input.partyName || "there"}.`;
   const lines = [
-    opening,
+    `Hi ${input.partyName || "there"} — it's me ${who || "your friend"}.`,
     "",
-    `${input.amount} ${input.tokenSymbol} for ${input.reason || "our shared costs"}.`,
+    `Please pay up your bill of ${input.amount} ${input.tokenSymbol}${
+      input.reason ? ` for ${input.reason}` : ""
+    }.`,
     "",
     `Pay on Tempo: ${input.url}`,
     "",
@@ -121,7 +122,8 @@ export function reminderMessage(input: {
 
 /**
  * The message a payer sends back once they have paid: the confirmation the
- * person who asked can keep, with the receipt and the reference in it.
+ * person who asked can keep, with the receipt, the reference and the full
+ * transaction hash in it.
  */
 export function paymentConfirmation(input: {
   payerName: string;
@@ -136,16 +138,17 @@ export function paymentConfirmation(input: {
   const payer = input.payerName?.trim() || "I";
   const to = input.hostName?.trim();
   const lines = [
-    to ? `Hi ${to} — ${payer} here.` : `Hi — ${payer} here.`,
+    to ? `Hello ${to} — ${payer} here.` : `Hello — ${payer} here.`,
     "",
-    `I have completed payment for what was in the request: ${input.amount} ${input.tokenSymbol}${
+    `I have completed my payment of ${input.amount} ${input.tokenSymbol}${
       input.reason ? ` for ${input.reason}` : ""
     }.`,
     "",
+    `Transaction hash: ${input.txHash}`,
+    input.explorerUrl ? `View it: ${input.explorerUrl}` : "",
     `Reference: ${input.reference}`,
-    `Transaction: ${input.explorerUrl || input.txHash}`,
     "",
     "Sent on Tempo — the transfer carries the reference, so it matches your request.",
   ];
-  return lines.join("\n");
+  return lines.filter((line) => line !== "").join("\n");
 }
