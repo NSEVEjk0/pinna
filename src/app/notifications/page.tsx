@@ -1,21 +1,39 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePinna } from "@/lib/usePinna";
 import { explorerForRecord } from "@/lib/tempo";
+import { whenText, hashLabel } from "@/lib/format";
 
 /**
- * Notifications: the things that happened while you were away — most of all,
- * requests that got paid.
+ * Notifications: what actually moved. Every row is a transaction Pinna read
+ * from Tempo — money received, money paid — with its hash, so the page is a
+ * record rather than a pile of local guesses.
  */
 export default function NotificationsPage() {
-  const { isConnected, network, events, readNotifications } = usePinna();
+  const { isConnected, network, ledger, events, readNotifications, syncFromChain, syncing, lastSync } =
+    usePinna();
+  const [filter, setFilter] = useState<"all" | "received" | "sent">("all");
 
   useEffect(() => {
-    if (isConnected && events.some((e) => !e.read)) {
-      readNotifications();
-    }
+    if (!isConnected) return;
+    void syncFromChain({ quiet: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, network.chainId]);
+
+  const received = ledger.filter((e) => e.direction === "received");
+  const sentTx = ledger.filter((e) => e.direction === "sent");
+  const rows = filter === "received" ? received : filter === "sent" ? sentTx : ledger;
+
+  // Requests that were paid show up here too, even before a sync.
+  const paidFromLocal = useMemo(
+    () => events.filter((e) => e.kind === "request_paid" && e.txHash),
+    [events]
+  );
+
+  useEffect(() => {
+    if (isConnected && events.some((e) => !e.read)) readNotifications();
   }, [isConnected, events, readNotifications]);
 
   if (!isConnected) {
@@ -25,7 +43,8 @@ export default function NotificationsPage() {
           Connect a wallet to see notifications
         </h1>
         <p className="muted" style={{ maxWidth: "48ch" }}>
-          Notifications are kept per wallet, in this browser.
+          Pinna reads your transactions from Tempo, so this page shows what actually happened on
+          chain.
         </p>
       </div>
     );
@@ -39,30 +58,102 @@ export default function NotificationsPage() {
       <h1 className="display" style={{ fontSize: "clamp(2rem, 4.6vw, 3rem)", margin: "0 0 12px" }}>
         What happened.
       </h1>
-      <p className="muted" style={{ margin: "0 0 34px", maxWidth: "56ch" }}>
-        Payments that arrived, lists you sent, and requests you created. Checked automatically
-        whenever you open History or press “Check Tempo for payments”.
+      <p className="muted" style={{ margin: "0 0 22px", maxWidth: "56ch" }}>
+        Every payment in and out of this wallet, read from Tempo — <strong>received</strong> for
+        money that arrived, <strong>paid</strong> for money that left — each with its transaction
+        hash.
       </p>
 
-      {events.length === 0 ? (
+      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 26 }}>
+        <button className="button button-quiet" onClick={() => syncFromChain()} disabled={syncing}>
+          {syncing ? "Reading Tempo…" : "Sync from Tempo"}
+        </button>
+        <span className="faint" style={{ fontSize: "0.82rem" }}>
+          {lastSync ? `Last checked ${whenText(lastSync)}` : "Not checked yet"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+        {(
+          [
+            ["all", `All (${ledger.length})`],
+            ["received", `Received (${received.length})`],
+            ["sent", `Paid (${sentTx.length})`],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            className="pick-button"
+            onClick={() => setFilter(key)}
+            style={{
+              borderColor: filter === key ? "var(--sage)" : undefined,
+              color: filter === key ? "var(--sage)" : undefined,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {rows.length === 0 ? (
         <p className="muted">
-          Nothing yet. Once someone pays a request, it lands here.
+          Nothing yet. Press “Sync from Tempo” to read your transactions from the chain.
         </p>
       ) : (
         <div style={{ borderTop: "1px solid var(--hairline)" }}>
-          {events.map((event) => (
-            <div key={event.id} className="notif-row">
+          {rows.map((entry) => (
+            <div key={entry.id} className="notif-row">
               <div>
                 <p style={{ margin: 0 }}>
-                  {!event.read ? <span className="notif-dot" aria-hidden="true" /> : null}
-                  {event.title}
+                  <span className={`chip ${entry.direction === "received" ? "chip-sage" : ""}`} style={{ marginRight: 12 }}>
+                    {entry.direction === "received" ? "↓ received" : "✓ paid"}
+                  </span>
+                  {entry.amount} {entry.tokenSymbol}
+                  <span className="faint" style={{ marginLeft: 10, fontSize: "0.85rem" }}>
+                    {entry.direction === "received" ? "from" : "to"}{" "}
+                    {entry.name || entry.address.slice(0, 12) + "…"}
+                  </span>
                 </p>
                 <p className="faint" style={{ margin: "4px 0 0", fontSize: "0.8rem" }}>
-                  {event.detail} · {event.at.slice(0, 16).replace("T", " ")}
+                  {whenText(entry.at)}
+                  {entry.reason ? ` · ${entry.reason}` : ""}
+                  {entry.reference ? ` · ref ${entry.reference}` : ""}
                 </p>
               </div>
               <div style={{ display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap" }}>
-                {event.txHash && event.txHash.startsWith("0x") ? (
+                <a
+                  className="hash-link"
+                  style={{ fontSize: "0.8rem" }}
+                  href={explorerForRecord(entry, network, entry.txHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {hashLabel(entry.txHash)}
+                </a>
+                <Link className="link" style={{ fontSize: "0.85rem" }} href="/history">
+                  History
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {paidFromLocal.length > 0 ? (
+        <div style={{ marginTop: 36 }}>
+          <p className="eyebrow" style={{ margin: "0 0 10px" }}>
+            Requests that were paid
+          </p>
+          <div style={{ borderTop: "1px solid var(--hairline)" }}>
+            {paidFromLocal.map((event) => (
+              <div key={event.id} className="notif-row">
+                <div>
+                  <p style={{ margin: 0 }}>{event.title}</p>
+                  <p className="faint" style={{ margin: "4px 0 0", fontSize: "0.8rem" }}>
+                    {event.detail} · {whenText(event.at)}
+                  </p>
+                </div>
+                {event.txHash ? (
                   <a
                     className="hash-link"
                     style={{ fontSize: "0.8rem" }}
@@ -70,19 +161,14 @@ export default function NotificationsPage() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    {event.txHash.slice(0, 10)}…
+                    {hashLabel(event.txHash)}
                   </a>
                 ) : null}
-                {event.requestId ? (
-                  <Link className="link" style={{ fontSize: "0.85rem" }} href="/history">
-                    View
-                  </Link>
-                ) : null}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

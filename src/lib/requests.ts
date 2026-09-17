@@ -99,15 +99,16 @@ export interface Amounts {
 /**
  * Decide whether an on-chain transfer settles a request.
  *
- * The memo wins: a transfer carrying this request's id is a match even if the
- * amount differs (people round, or pay a little extra). Without a memo, a
- * transfer counts only when it comes from the person who owes, goes to the
- * host, covers the amount, and is not older than the request.
+ * The memo decides. A transfer carrying this request's id settles it, whatever
+ * the amount. A transfer carrying a *different* reference never does, and a
+ * transfer with no memo is never taken as payment on its own — Pinna will not
+ * call something paid because the numbers happened to line up. Those are
+ * offered to you as possible matches instead (see `findPossibleMatch`).
  */
 export function matchesRequest(
   request: PaymentRequest,
   transfer: IncomingTransfer,
-  amounts: Amounts
+  _amounts: Amounts
 ): boolean {
   if (request.status === "paid") return false;
 
@@ -115,22 +116,36 @@ export function matchesRequest(
   if (!toHost) return false;
 
   const memoRef = decodeMemo(transfer.memo);
-  if (memoRef) {
-    if (memoRef === request.id) return true;
-    // A memo for a different request is not a match, whatever the amount.
-    return false;
-  }
+  if (!memoRef) return false;
 
-  const fromParty = transfer.from.toLowerCase() === request.partyAddress.toLowerCase();
-  if (!fromParty) return false;
-  if (transfer.amountUnits < amounts.expectedUnits) return false;
+  return memoRef === request.id;
+}
 
-  if (transfer.timestamp && request.createdAt) {
-    const created = Math.floor(new Date(request.createdAt).getTime() / 1000);
-    // Allow a little clock slack, but not a payment from before the ask.
-    if (transfer.timestamp < created - 120) return false;
-  }
-  return true;
+/**
+ * A transfer that looks like it might be the payment but does not say so: no
+ * memo, from the person who owes, at least the amount, after the request was
+ * made. Pinna shows these and lets a human confirm — it never settles on one.
+ */
+export function findPossibleMatch(
+  request: PaymentRequest,
+  transfers: IncomingTransfer[],
+  amounts: Amounts
+): IncomingTransfer | null {
+  if (request.status !== "waiting") return null;
+
+  const created = request.createdAt ? Math.floor(new Date(request.createdAt).getTime() / 1000) : 0;
+  const candidates = transfers
+    .filter((t) => {
+      if (t.to.toLowerCase() !== request.hostAddress.toLowerCase()) return false;
+      if (decodeMemo(t.memo)) return false; // memoed transfers are settled or rejected above
+      if (t.from.toLowerCase() !== request.partyAddress.toLowerCase()) return false;
+      if (t.amountUnits < amounts.expectedUnits) return false;
+      if (t.timestamp && created && t.timestamp < created - 120) return false;
+      return true;
+    })
+    .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+  return candidates[0] ?? null;
 }
 
 /** The transfer that settles a request, if any — the earliest match wins. */

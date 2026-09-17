@@ -103,8 +103,10 @@ describe("matching an incoming transfer to a request", () => {
     expect(matchesRequest(request(), otherRef, AMOUNTS)).toBe(false);
   });
 
-  it("matches without a memo when the payer, amount and time line up", () => {
-    expect(matchesRequest(request(), transfer(), AMOUNTS)).toBe(true);
+  it("refuses a transfer with no memo, however well it fits", () => {
+    // Right payer, right amount, right time — but nothing saying what it is for.
+    // Pinna does not call this paid; it offers it as a possible match instead.
+    expect(matchesRequest(request(), transfer(), AMOUNTS)).toBe(false);
   });
 
   it("rejects a transfer from someone else with no memo", () => {

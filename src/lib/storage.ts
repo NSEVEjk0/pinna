@@ -1,4 +1,5 @@
 import type { PaymentRequest } from "./requests";
+import type { LedgerEntry } from "./ledger";
 
 /**
  * Everything Pinna knows lives in the browser, keyed by the connected wallet:
@@ -164,6 +165,24 @@ export function loadStore(wallet: string): PinnaStore {
     sent: loadSent(wallet),
     requests: loadRequests(wallet),
   };
+}
+
+/** The last chain sync: every transfer in and out, as Tempo reported it. */
+export function loadLedger(wallet: string): LedgerEntry[] {
+  return read<LedgerEntry[]>(wallet, "ledger", []);
+}
+
+export function saveLedger(wallet: string, entries: LedgerEntry[]): LedgerEntry[] {
+  write(wallet, "ledger", entries);
+  return entries;
+}
+
+export function loadLastSync(wallet: string): string | null {
+  return read<string | null>(wallet, "lastSync", null);
+}
+
+export function saveLastSync(wallet: string, at: string): void {
+  write(wallet, "lastSync", at);
 }
 
 export { EMPTY as EMPTY_STORE };

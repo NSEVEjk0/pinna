@@ -27,10 +27,61 @@ export function publicClientFor(network: TempoNetwork) {
 }
 
 export interface ReadTransfersOptions {
-  /** Only look back this many blocks (default ~a day of Tempo blocks). */
+  /** Only look back this many blocks (default: as far as the RPC allows). */
   lookbackBlocks?: bigint;
   /** Cap on returned transfers. */
   limit?: number;
+}
+
+/**
+ * Tempo's public RPC rejects a log query spanning more than a fixed number of
+ * blocks (100,000 on the testnet). Large windows are therefore read in chunks,
+ * and a chunk that is still too big is halved until it fits.
+ */
+const MAX_BLOCK_SPAN = 90_000n;
+
+async function getLogsChunked(
+  client: ReturnType<typeof publicClientFor>,
+  params: {
+    address: `0x${string}`;
+    event: typeof TRANSFER_WITH_MEMO;
+    args?: Record<string, unknown>;
+  },
+  fromBlock: bigint,
+  toBlock: bigint
+): Promise<Awaited<ReturnType<typeof client.getLogs>>> {
+  const out: Awaited<ReturnType<typeof client.getLogs>> = [];
+  let span = MAX_BLOCK_SPAN;
+  let cursor = fromBlock;
+
+  while (cursor <= toBlock) {
+    const end = cursor + span - 1n > toBlock ? toBlock : cursor + span - 1n;
+    try {
+      const logs = await client.getLogs({
+        address: params.address,
+        event: params.event,
+        args: params.args as never,
+        fromBlock: cursor,
+        toBlock: end,
+      });
+      out.push(...logs);
+      cursor = end + 1n;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/range|too (many|large)|limit|exceed/i.test(message) && span > 1_000n) {
+        span = span / 2n;
+        continue; // retry the same window with a smaller chunk
+      }
+      throw err;
+    }
+  }
+  return out;
+}
+
+/** How far back a read should look. */
+function lookbackWindow(head: bigint, lookback?: bigint): bigint {
+  const window = lookback ?? 300_000n;
+  return head > window ? head - window : 0n;
 }
 
 /**
@@ -46,16 +97,14 @@ export async function readIncomingTransfers(
 ): Promise<IncomingTransfer[]> {
   const client = publicClientFor(network);
   const head = await client.getBlockNumber();
-  const lookback = options.lookbackBlocks ?? 50_000n;
-  const fromBlock = head > lookback ? head - lookback : 0n;
+  const fromBlock = lookbackWindow(head, options.lookbackBlocks);
 
-  const logs = await client.getLogs({
-    address: token,
-    event: TRANSFER_WITH_MEMO,
-    args: { to },
+  const logs = await getLogsChunked(
+    client,
+    { address: token, event: TRANSFER_WITH_MEMO, args: { to } },
     fromBlock,
-    toBlock: head,
-  });
+    head
+  );
 
   const limit = options.limit ?? 200;
   const slice = logs.slice(Math.max(0, logs.length - limit));
@@ -76,8 +125,10 @@ export async function readIncomingTransfers(
       };
       let timestamp: number | undefined;
       try {
-        const block = await client.getBlock({ blockNumber: log.blockNumber });
-        timestamp = Number(block.timestamp);
+        if (log.blockNumber != null) {
+          const block = await client.getBlock({ blockNumber: log.blockNumber });
+          timestamp = Number(block.timestamp);
+        }
       } catch {
         timestamp = undefined;
       }
@@ -86,7 +137,7 @@ export async function readIncomingTransfers(
         to: args.to,
         amountUnits: args.value,
         memo: args.memo,
-        txHash: log.transactionHash,
+        txHash: log.transactionHash ?? "",
         timestamp,
       });
     } catch {
@@ -94,6 +145,87 @@ export async function readIncomingTransfers(
     }
   }
   return transfers;
+}
+
+/**
+ * Everything this wallet has done on Tempo, in and out, read straight from the
+ * chain. This is what lets Pinna show past transactions as they really are —
+ * sent ones as paid, received ones as received — with their hashes, instead of
+ * relying on what this browser happens to remember.
+ */
+export async function readWalletTransfers(
+  network: TempoNetwork,
+  token: `0x${string}`,
+  address: `0x${string}`,
+  options: ReadTransfersOptions = {}
+): Promise<IncomingTransfer[]> {
+  const client = publicClientFor(network);
+  const head = await client.getBlockNumber();
+  const fromBlock = lookbackWindow(head, options.lookbackBlocks);
+
+  const [outgoing, incoming] = await Promise.all([
+    getLogsChunked(
+      client,
+      { address: token, event: TRANSFER_WITH_MEMO, args: { from: address } },
+      fromBlock,
+      head
+    ),
+    getLogsChunked(
+      client,
+      { address: token, event: TRANSFER_WITH_MEMO, args: { to: address } },
+      fromBlock,
+      head
+    ),
+  ]);
+
+  const logs = [...outgoing, ...incoming];
+  const limit = options.limit ?? 500;
+  const slice = logs.slice(Math.max(0, logs.length - limit));
+
+  // Block times are fetched once each, not once per log.
+  const blocks = [
+    ...new Set(slice.map((l) => l.blockNumber).filter((bn): bn is bigint => bn != null)),
+  ];
+  const times = new Map<bigint, number>();
+  await Promise.all(
+    blocks.slice(0, 120).map(async (bn) => {
+      try {
+        const block = await client.getBlock({ blockNumber: bn });
+        times.set(bn, Number(block.timestamp));
+      } catch {
+        // a missing timestamp is not fatal; the row simply shows no time
+      }
+    })
+  );
+
+  const transfers: IncomingTransfer[] = [];
+  for (const log of slice) {
+    try {
+      const decoded = decodeEventLog({
+        abi: [TRANSFER_WITH_MEMO],
+        data: log.data,
+        topics: log.topics,
+      });
+      const args = decoded.args as unknown as {
+        from: `0x${string}`;
+        to: `0x${string}`;
+        value: bigint;
+        memo: string;
+      };
+      transfers.push({
+        from: args.from,
+        to: args.to,
+        amountUnits: args.value,
+        memo: args.memo,
+        txHash: log.transactionHash ?? "",
+        timestamp: log.blockNumber != null ? times.get(log.blockNumber) : undefined,
+      });
+    } catch {
+      // a log that does not decode is skipped, never guessed at
+    }
+  }
+
+  return transfers.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 
 /** Read the token balance for an address, in base units. */
@@ -133,17 +265,15 @@ export async function findTransferByReference(
 ): Promise<IncomingTransfer | null> {
   const client = publicClientFor(network);
   const head = await client.getBlockNumber();
-  const lookback = options.lookbackBlocks ?? 200_000n;
-  const fromBlock = head > lookback ? head - lookback : 0n;
+  const fromBlock = lookbackWindow(head, options.lookbackBlocks);
 
   const memo = encodeMemo(reference);
-  const logs = await client.getLogs({
-    address: token,
-    event: TRANSFER_WITH_MEMO,
-    args: { to, memo },
+  const logs = await getLogsChunked(
+    client,
+    { address: token, event: TRANSFER_WITH_MEMO, args: { to, memo } },
     fromBlock,
-    toBlock: head,
-  });
+    head
+  );
   if (logs.length === 0) return null;
 
   const log = logs[logs.length - 1];
@@ -161,8 +291,10 @@ export async function findTransferByReference(
 
   let timestamp: number | undefined;
   try {
-    const block = await client.getBlock({ blockNumber: log.blockNumber });
-    timestamp = Number(block.timestamp);
+    if (log.blockNumber != null) {
+      const block = await client.getBlock({ blockNumber: log.blockNumber });
+      timestamp = Number(block.timestamp);
+    }
   } catch {
     timestamp = undefined;
   }
@@ -172,7 +304,7 @@ export async function findTransferByReference(
     to: args.to,
     amountUnits: args.value,
     memo: args.memo,
-    txHash: log.transactionHash,
+    txHash: log.transactionHash ?? "",
     timestamp,
   };
 }

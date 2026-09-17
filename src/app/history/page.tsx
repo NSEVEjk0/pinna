@@ -1,17 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePinna } from "@/lib/usePinna";
 import { explorerForRecord, type TempoNetwork } from "@/lib/tempo";
-import { readIncomingTransfers } from "@/lib/chain";
-import { cancel, findSettlement, markPaid, type PaymentRequest } from "@/lib/requests";
-import { parseAmount } from "@/lib/money";
+import { findSettlement, findPossibleMatch, markPaid, cancel, type PaymentRequest } from "@/lib/requests";
+import { parseAmount, formatAmount } from "@/lib/money";
 import { downloadReceipt } from "@/lib/receipt";
 import { findRepeats, type RepeatCandidate } from "@/lib/duplicates";
 import { paidEvent } from "@/lib/events";
 import { payLinkUrl } from "@/lib/paylink";
-import type { SentList } from "@/lib/storage";
+import type { LedgerEntry } from "@/lib/ledger";
+import type { IncomingTransfer } from "@/lib/requests";
+import { readIncomingTransfers } from "@/lib/chain";
+import { whenText, hashLabel } from "@/lib/format";
 
 const TABS = [
   "Money sent / paid by you",
@@ -20,13 +22,6 @@ const TABS = [
 ] as const;
 
 type Tab = (typeof TABS)[number];
-
-/** A short, recognisable form of a hash that still links to the full one. */
-function hashLabel(hash: string, lead = 10, tail = 6): string {
-  if (!hash || !hash.startsWith("0x")) return hash || "—";
-  if (hash.length <= lead + tail + 2) return hash;
-  return `${hash.slice(0, lead)}…${hash.slice(-tail)}`;
-}
 
 export default function HistoryPage() {
   const {
@@ -37,92 +32,129 @@ export default function HistoryPage() {
     token,
     sent,
     requests,
-    replaceRequests,
+    ledger,
+    lastSync,
+    syncing,
+    syncError,
+    syncFromChain,
     saveRequest,
     notify,
   } = usePinna();
+
   const [tab, setTab] = useState<Tab>(TABS[0]);
-  const [checking, setChecking] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-  const [openSent, setOpenSent] = useState<string | null>(null);
-  const [openRequest, setOpenRequest] = useState<string | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [transfers, setTransfers] = useState<IncomingTransfer[]>([]);
+  const [possible, setPossible] = useState<Record<string, IncomingTransfer>>({});
+  const [note, setNote] = useState<string | null>(null);
+
+  // Read the chain whenever the wallet or network changes.
+  useEffect(() => {
+    if (!address) return;
+    void syncFromChain({ quiet: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, network.chainId]);
+
+  const sentLedger = useMemo(
+    () => ledger.filter((e) => e.direction === "sent"),
+    [ledger]
+  );
+  const receivedLedger = useMemo(
+    () => ledger.filter((e) => e.direction === "received"),
+    [ledger]
+  );
 
   const paidRequests = requests.filter((r) => r.status === "paid");
   const waiting = requests.filter((r) => r.status === "waiting");
   const cancelled = requests.filter((r) => r.status === "cancelled");
 
-  /** Every payment that left this wallet, flattened for the repeats section. */
   const repeatCandidates: RepeatCandidate[] = useMemo(
     () =>
-      sent.flatMap((entry) =>
-        (entry.rows ?? []).map((row, i) => ({
-          id: `${entry.id}-${i}`,
-          name: row.name,
-          address: row.address,
-          amount: row.amount,
-          reason: row.reason,
-          txHash: entry.txHash,
-          at: entry.at,
-        }))
-      ),
-    [sent]
+      ledger
+        .filter((e) => e.direction === "sent" && e.txHash)
+        .map((e, i) => ({
+          id: `${e.txHash}-${i}`,
+          name: e.name || e.address,
+          address: e.address,
+          amount: e.amount,
+          reason: e.reason,
+          txHash: e.txHash,
+          at: e.at,
+        })),
+    [ledger]
   );
   const repeats = useMemo(() => findRepeats(repeatCandidates), [repeatCandidates]);
 
-  /** Look for matching transfers on Tempo and settle the requests they pay. */
+  /** Settle waiting requests whose memo appeared, and offer the ones that did not. */
   async function checkTempo() {
-    if (!address || waiting.length === 0) return;
-    setChecking(true);
+    if (!address) return;
     setNote(null);
+    setPossible({});
+    const found = await syncFromChain();
+    if (!found) {
+      setNote(syncError ?? "Tempo could not be read just now.");
+      return;
+    }
     try {
-      const transfers = await readIncomingTransfers(network, token.address, address);
+      const incoming = await readIncomingTransfers(network, token.address, address);
+      setTransfers(incoming);
+      const candidates: Record<string, IncomingTransfer> = {};
       let settled = 0;
-      const next: PaymentRequest[] = requests.map((request) => {
+
+      const next = requests.map((request) => {
         if (request.status !== "waiting") return request;
-        const match = findSettlement(request, transfers, {
-          expectedUnits: parseAmount(request.amount, token.decimals),
-        });
-        if (!match) return request;
-        settled += 1;
-        const paid = markPaid(request, { txHash: match.txHash, settledBy: "detected" });
-        paid.chainId = network.chainId;
-        paid.explorerUrl = network.explorerUrl;
-        notify(paidEvent(paid, match.txHash));
-        return paid;
+        const amounts = { expectedUnits: parseAmount(request.amount, token.decimals) };
+        const match = findSettlement(request, incoming, amounts);
+        if (match) {
+          settled += 1;
+          const paid = markPaid(request, { txHash: match.txHash, settledBy: "detected" });
+          paid.chainId = network.chainId;
+          paid.explorerUrl = network.explorerUrl;
+          notify(paidEvent(paid, match.txHash));
+          return paid;
+        }
+        const maybe = findPossibleMatch(request, incoming, amounts);
+        if (maybe) candidates[request.id] = maybe;
+        return request;
       });
-      replaceRequests(next);
+
+      next.forEach((r) => saveRequest(r));
+      setPossible(candidates);
       setNote(
         settled > 0
-          ? `${settled} payment${settled === 1 ? "" : "s"} matched on Tempo.`
-          : "No matching transfer on Tempo yet."
+          ? `${settled} payment${settled === 1 ? "" : "s"} matched by reference on Tempo.`
+          : Object.keys(candidates).length > 0
+            ? "No payment carried a matching reference. One transfer looks similar — check below."
+            : "No matching transfer on Tempo yet."
       );
     } catch (err) {
       setNote(err instanceof Error ? `Could not read Tempo: ${err.message}` : "Could not read Tempo.");
-    } finally {
-      setChecking(false);
     }
   }
 
-  function receiptForList(entry: SentList) {
+  function receiptForEntry(entry: LedgerEntry) {
     downloadReceipt({
-      title: "Payment receipt",
-      subject: `List ${entry.id}`,
-      rows: (entry.rows ?? []).map((r, i) => ({
-        id: `${entry.id}-${i}`,
-        name: r.name,
-        address: (r.address as `0x${string}`) || (`0x${"0".repeat(40)}` as `0x${string}`),
-        amount: r.amount,
-        reason: r.reason,
-      })),
+      title: entry.direction === "sent" ? "Payment receipt" : "Received payment",
+      subject: entry.reference ? `Reference ${entry.reference}` : "Chain record",
+      rows: [
+        {
+          id: entry.id,
+          name: entry.name || entry.address,
+          address: entry.address as `0x${string}`,
+          amount: entry.amount,
+          reason: entry.reason,
+        },
+      ],
       txHash: entry.txHash,
-      explorerUrl: entry.txHash ? explorerForRecord(entry, network, entry.txHash) : "",
-      at: entry.at,
+      explorerUrl: explorerForRecord(entry, network, entry.txHash),
+      at: entry.at || new Date().toISOString(),
       tokenSymbol: entry.tokenSymbol,
-      network: entry.network,
+      network: network.name,
       from: address ?? "",
       decimals: token.decimals,
-      note: `List total ${entry.total} ${entry.tokenSymbol} across ${entry.rowCount} transfers.`,
+      note: entry.reference
+        ? `Reference ${entry.reference} was written into the transfer memo on Tempo.`
+        : "Read from Tempo; no Pinna reference was attached to this transfer.",
     });
   }
 
@@ -146,10 +178,7 @@ export default function HistoryPage() {
       network: network.name,
       from: request.hostAddress,
       decimals: token.decimals,
-      note:
-        request.status === "paid"
-          ? `Settled${request.settledBy === "marked" ? " and marked paid" : " from a matching Tempo transfer"}.`
-          : `Pay to ${request.hostAddress} on ${network.name}. Quote reference ${request.id}.`,
+      note: request.status === "paid" ? "Settled by a verified Tempo transfer." : undefined,
     });
   }
 
@@ -160,7 +189,8 @@ export default function HistoryPage() {
           Connect a wallet to see history
         </h1>
         <p className="muted" style={{ maxWidth: "48ch" }}>
-          History is kept per wallet, in this browser.
+          Pinna reads your transactions from Tempo, so the history is the chain&apos;s, not a
+          local copy.
         </p>
       </div>
     );
@@ -171,9 +201,34 @@ export default function HistoryPage() {
       <p className="eyebrow" style={{ margin: "0 0 14px" }}>
         History
       </p>
-      <h1 className="display" style={{ fontSize: "clamp(2rem, 4.6vw, 3rem)", margin: "0 0 30px" }}>
+      <h1 className="display" style={{ fontSize: "clamp(2rem, 4.6vw, 3rem)", margin: "0 0 18px" }}>
         What moved, what is owed.
       </h1>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          alignItems: "center",
+          flexWrap: "wrap",
+          marginBottom: 28,
+        }}
+      >
+        <button className="button button-quiet" onClick={checkTempo} disabled={syncing}>
+          {syncing ? "Reading Tempo…" : "Sync from Tempo"}
+        </button>
+        <span className="faint" style={{ fontSize: "0.82rem" }}>
+          {lastSync
+            ? `Last checked ${whenText(lastSync)}`
+            : "Not checked yet — press to read your transactions from the chain"}
+        </span>
+        {note ? (
+          <span className="muted" style={{ fontSize: "0.88rem" }}>
+            {note}
+          </span>
+        ) : null}
+        {syncError ? <span style={{ color: "#c98b7f", fontSize: "0.88rem" }}>{syncError}</span> : null}
+      </div>
 
       {repeats.length > 0 ? (
         <div className="panel" style={{ padding: 22, marginBottom: 34 }}>
@@ -181,8 +236,7 @@ export default function HistoryPage() {
             Repeated payments
           </p>
           <p className="muted" style={{ margin: "0 0 16px", fontSize: "0.92rem" }}>
-            The same person and the same amount, more than once. Worth a look before anything else
-            leaves the wallet.
+            The same person and the same amount, more than once — as recorded on Tempo.
           </p>
           {repeats.map((group) => (
             <div
@@ -205,7 +259,7 @@ export default function HistoryPage() {
                   </span>
                 </p>
                 <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
-                  {group.address.slice(0, 12)}…{group.address.slice(-6)} · last {group.lastAt.slice(0, 16).replace("T", " ")}
+                  {group.address.slice(0, 12)}…{group.address.slice(-6)}
                 </p>
               </div>
               <p className="mono" style={{ margin: 0 }}>
@@ -225,139 +279,41 @@ export default function HistoryPage() {
       </div>
 
       {tab === TABS[0] ? (
-        sent.length === 0 ? (
-          <p className="muted">Nothing sent yet.</p>
+        sentLedger.length === 0 ? (
+          <p className="muted">
+            Nothing sent yet. Press “Sync from Tempo” to read your past transfers.
+          </p>
         ) : (
           <div style={{ borderTop: "1px solid var(--hairline)" }}>
-            {sent.map((entry) => {
-              const open = openSent === entry.id;
-              return (
-                <div key={entry.id}>
-                  <button
-                    type="button"
-                    className="history-row"
-                    onClick={() => setOpenSent(open ? null : entry.id)}
-                    aria-expanded={open}
-                  >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) minmax(0,1.2fr)",
-                        gap: 16,
-                        alignItems: "baseline",
-                      }}
-                      className="row-grid"
-                    >
-                      <div>
-                        <p style={{ margin: 0 }}>
-                          {entry.to.join(", ") || "—"}
-                          <span className="faint" style={{ marginLeft: 10, fontSize: "0.82rem" }}>
-                            {entry.rowCount} transfer{entry.rowCount === 1 ? "" : "s"}
-                          </span>
-                        </p>
-                        <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
-                          {entry.at.slice(0, 16).replace("T", " ")}
-                        </p>
-                      </div>
-                      <p className="mono" style={{ margin: 0 }}>
-                        {entry.total} {entry.tokenSymbol}
-                      </p>
-                      <p className="mono" style={{ margin: 0, fontSize: "0.82rem" }}>
-                        {entry.txHash ? (
-                          <a
-                            className="hash-link"
-                            href={explorerForRecord(entry, network, entry.txHash)}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {hashLabel(entry.txHash)}
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </p>
-                    </div>
-                  </button>
-
-                  {open ? (
-                    <div className="panel" style={{ padding: 20, margin: "10px 0 20px" }}>
-                      <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-                        Batch detail
-                      </p>
-                      <p className="faint" style={{ margin: "0 0 16px", fontSize: "0.85rem" }}>
-                        One Tempo transaction carried every row below. Each row is its own transfer
-                        with its own reference, so the batch hash belongs to all of them.
-                      </p>
-
-                      <div className="detail-grid">
-                        <Detail label="Transaction" value={hashLabel(entry.txHash, 14, 10)} />
-                        <Detail label="Network" value={entry.network} />
-                        <Detail label="Finalised" value={entry.at.slice(0, 19).replace("T", " ")} />
-                        <Detail label="Transfers" value={String(entry.rowCount)} />
-                      </div>
-
-                      <div style={{ marginTop: 18, borderTop: "1px solid var(--hairline)" }}>
-                        {(entry.rows ?? []).map((row, i) => (
-                          <div
-                            key={`${entry.id}-${i}`}
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 14,
-                              alignItems: "baseline",
-                              padding: "11px 0",
-                              borderBottom: "1px solid var(--hairline)",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <span>{row.name}</span>
-                            <span className="faint" style={{ fontSize: "0.85rem" }}>
-                              {row.reason || "no reason"}
-                            </span>
-                            <span className="mono" style={{ fontSize: "0.88rem" }}>
-                              {row.amount} {entry.tokenSymbol}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
-                        <a
-                          className="link"
-                          href={explorerForRecord(entry, network, entry.txHash)}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontSize: "0.88rem" }}
-                        >
-                          Open the full transaction
-                        </a>
-                        <button className="pdf-again" onClick={() => receiptForList(entry)}>
-                          Redownload PDF
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+            {sentLedger.map((entry) => (
+              <LedgerRow
+                key={entry.id}
+                entry={entry}
+                network={network}
+                open={openRow === entry.id}
+                onToggle={() => setOpenRow(openRow === entry.id ? null : entry.id)}
+                onPdf={() => receiptForEntry(entry)}
+              />
+            ))}
           </div>
         )
       ) : null}
 
       {tab === TABS[1] ? (
-        paidRequests.length === 0 ? (
-          <p className="muted">Nothing received yet.</p>
+        receivedLedger.length === 0 ? (
+          <p className="muted">
+            Nothing received yet. Press “Sync from Tempo” to read your past transfers.
+          </p>
         ) : (
           <div style={{ borderTop: "1px solid var(--hairline)" }}>
-            {paidRequests.map((request) => (
-              <RequestRow
-                key={request.id}
-                request={request}
+            {receivedLedger.map((entry) => (
+              <LedgerRow
+                key={entry.id}
+                entry={entry}
                 network={network}
-                open={openRequest === request.id}
-                onToggle={() => setOpenRequest(openRequest === request.id ? null : request.id)}
-                onPdf={() => receiptForRequest(request)}
+                open={openRow === entry.id}
+                onToggle={() => setOpenRow(openRow === entry.id ? null : entry.id)}
+                onPdf={() => receiptForEntry(entry)}
               />
             ))}
           </div>
@@ -366,26 +322,6 @@ export default function HistoryPage() {
 
       {tab === TABS[2] ? (
         <>
-          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
-            <button
-              className="button button-quiet"
-              onClick={checkTempo}
-              disabled={checking || waiting.length === 0}
-            >
-              {checking ? "Reading Tempo…" : "Check Tempo for payments"}
-            </button>
-            {note ? (
-              <span className="muted" style={{ fontSize: "0.9rem" }}>
-                {note}
-              </span>
-            ) : null}
-            {cancelled.length > 0 ? (
-              <button className="nav-link" onClick={() => setShowCancelled((v) => !v)} style={{ background: "transparent", border: 0, cursor: "pointer" }}>
-                {showCancelled ? "Hide" : "Show"} cancelled ({cancelled.length})
-              </button>
-            ) : null}
-          </div>
-
           {waiting.length === 0 ? (
             <p className="muted">Nothing waiting.</p>
           ) : (
@@ -395,8 +331,8 @@ export default function HistoryPage() {
                   key={request.id}
                   request={request}
                   network={network}
-                  open={openRequest === request.id}
-                  onToggle={() => setOpenRequest(openRequest === request.id ? null : request.id)}
+                  open={openRow === request.id}
+                  onToggle={() => setOpenRow(openRow === request.id ? null : request.id)}
                   onPdf={() => receiptForRequest(request)}
                   onCancel={() => saveRequest(cancel(request))}
                   onMarkPaid={() => {
@@ -406,35 +342,179 @@ export default function HistoryPage() {
                     saveRequest(paid);
                     notify(paidEvent(paid));
                   }}
+                  onAttachLink={() => saveRequest({ ...request, hasLink: true })}
                   hostAlias={alias}
-                  onAttachLink={() => {
-                    saveRequest({ ...request, hasLink: true });
+                  possible={possible[request.id]}
+                  onAcceptPossible={(transfer) => {
+                    const paid = markPaid(request, {
+                      txHash: transfer.txHash,
+                      settledBy: "marked",
+                    });
+                    paid.chainId = network.chainId;
+                    paid.explorerUrl = network.explorerUrl;
+                    saveRequest(paid);
+                    notify(paidEvent(paid, transfer.txHash));
+                    setPossible((prev) => {
+                      const next = { ...prev };
+                      delete next[request.id];
+                      return next;
+                    });
                   }}
                 />
               ))}
             </div>
           )}
 
-          {showCancelled && cancelled.length > 0 ? (
-            <div style={{ marginTop: 30 }}>
+          {paidRequests.length > 0 ? (
+            <div style={{ marginTop: 34 }}>
               <p className="eyebrow" style={{ margin: "0 0 10px" }}>
-                Cancelled
+                Settled
               </p>
               <div style={{ borderTop: "1px solid var(--hairline)" }}>
-                {cancelled.map((request) => (
+                {paidRequests.map((request) => (
                   <RequestRow
                     key={request.id}
                     request={request}
                     network={network}
-                    open={false}
-                    onToggle={() => {}}
+                    open={openRow === request.id}
+                    onToggle={() => setOpenRow(openRow === request.id ? null : request.id)}
                     onPdf={() => receiptForRequest(request)}
+                    hostAlias={alias}
                   />
                 ))}
               </div>
             </div>
           ) : null}
+
+          {cancelled.length > 0 ? (
+            <div style={{ marginTop: 30 }}>
+              <button
+                className="nav-link"
+                onClick={() => setShowCancelled((v) => !v)}
+                style={{ background: "transparent", border: 0, cursor: "pointer" }}
+              >
+                {showCancelled ? "Hide" : "Show"} cancelled ({cancelled.length})
+              </button>
+              {showCancelled ? (
+                <div style={{ borderTop: "1px solid var(--hairline)", marginTop: 12 }}>
+                  {cancelled.map((request) => (
+                    <RequestRow
+                      key={request.id}
+                      request={request}
+                      network={network}
+                      open={false}
+                      onToggle={() => {}}
+                      onPdf={() => receiptForRequest(request)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {transfers.length === 0 ? (
+            <p className="faint" style={{ marginTop: 22, fontSize: "0.82rem" }}>
+              “Sync from Tempo” reads the chain so links paid on another device are matched here.
+            </p>
+          ) : null}
         </>
+      ) : null}
+    </div>
+  );
+}
+
+function LedgerRow({
+  entry,
+  network,
+  open,
+  onToggle,
+  onPdf,
+}: {
+  entry: LedgerEntry;
+  network: TempoNetwork;
+  open: boolean;
+  onToggle: () => void;
+  onPdf: () => void;
+}) {
+  return (
+    <div>
+      <button type="button" className="history-row" onClick={onToggle} aria-expanded={open}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1.3fr)",
+            gap: 16,
+            alignItems: "baseline",
+          }}
+          className="row-grid"
+        >
+          <div>
+            <p style={{ margin: 0 }}>
+              {entry.name || entry.address}
+              {entry.reason ? (
+                <span className="faint" style={{ marginLeft: 10, fontSize: "0.82rem" }}>
+                  {entry.reason}
+                </span>
+              ) : null}
+            </p>
+            <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
+              {whenText(entry.at)}
+              {entry.reference ? ` · ref ${entry.reference}` : ""}
+            </p>
+          </div>
+          <p className="mono" style={{ margin: 0 }}>
+            {entry.amount} {entry.tokenSymbol}
+          </p>
+          <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+            <span className={`chip ${entry.status === "paid" ? "chip-sage" : "chip-sage"}`}>
+              {entry.status === "paid" ? "✓ paid" : "↓ received"}
+            </span>
+            <a
+              className="hash-link"
+              style={{ fontSize: "0.78rem" }}
+              href={explorerForRecord(entry, network, entry.txHash)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {hashLabel(entry.txHash)}
+            </a>
+          </div>
+        </div>
+      </button>
+
+      {open ? (
+        <div className="panel" style={{ padding: 20, margin: "10px 0 20px" }}>
+          <div className="detail-grid">
+            <Detail label="Status" value={entry.status} />
+            <Detail label="Amount" value={`${entry.amount} ${entry.tokenSymbol}`} />
+            <Detail label={entry.direction === "sent" ? "Sent to" : "Received from"} value={entry.address} />
+            <Detail label="Reference" value={entry.reference ?? "none on this transfer"} />
+            <Detail label="Reason" value={entry.reason || "—"} />
+            <Detail label="Finalised" value={whenText(entry.at)} />
+            <Detail label="Source" value={entry.fromChain ? "read from Tempo" : "local record"} />
+            <Detail label="Transaction" value={hashLabel(entry.txHash, 16, 10)} />
+          </div>
+
+          <p style={{ marginTop: 16, fontSize: "0.85rem", wordBreak: "break-all" }}>
+            <span className="faint" style={{ marginRight: 8 }}>
+              Hash
+            </span>
+            <a
+              className="hash-link"
+              href={explorerForRecord(entry, network, entry.txHash)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {entry.txHash}
+            </a>
+          </p>
+
+          <div style={{ marginTop: 18 }}>
+            <button className="pdf-again" onClick={onPdf}>
+              Download PDF
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -443,10 +523,13 @@ export default function HistoryPage() {
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="faint" style={{ margin: 0, fontSize: "0.68rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+      <p
+        className="faint"
+        style={{ margin: 0, fontSize: "0.68rem", letterSpacing: "0.12em", textTransform: "uppercase" }}
+      >
         {label}
       </p>
-      <p className="mono" style={{ margin: "4px 0 0", fontSize: "0.9rem", wordBreak: "break-all" }}>
+      <p className="mono" style={{ margin: "4px 0 0", fontSize: "0.88rem", wordBreak: "break-all" }}>
         {value}
       </p>
     </div>
@@ -462,6 +545,8 @@ function RequestRow({
   onCancel,
   onMarkPaid,
   onAttachLink,
+  onAcceptPossible,
+  possible,
   hostAlias,
 }: {
   request: PaymentRequest;
@@ -472,6 +557,8 @@ function RequestRow({
   onCancel?: () => void;
   onMarkPaid?: () => void;
   onAttachLink?: () => void;
+  onAcceptPossible?: (transfer: IncomingTransfer) => void;
+  possible?: IncomingTransfer;
   hostAlias?: string;
 }) {
   const hasHash = Boolean(request.txHash && request.txHash.startsWith("0x"));
@@ -481,7 +568,7 @@ function RequestRow({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1.2fr)",
+            gridTemplateColumns: "minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,1.3fr)",
             gap: 16,
             alignItems: "baseline",
           }}
@@ -495,7 +582,7 @@ function RequestRow({
               </span>
             </p>
             <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
-              {request.createdAt.slice(0, 16).replace("T", " ")} · ref {request.id}
+              {whenText(request.createdAt)} · ref {request.id}
             </p>
           </div>
           <p className="mono" style={{ margin: 0 }}>
@@ -504,10 +591,14 @@ function RequestRow({
           <div style={{ display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
             <span
               className={`chip ${
-                request.status === "paid" ? "chip-sage" : request.status === "cancelled" ? "chip-cancelled" : ""
+                request.status === "paid"
+                  ? "chip-sage"
+                  : request.status === "cancelled"
+                    ? "chip-cancelled"
+                    : ""
               }`}
             >
-              {request.status === "paid" ? "✓ paid" : request.status}
+              {request.status === "paid" ? "✓ received" : request.status}
             </span>
             {hasHash ? (
               <a
@@ -518,7 +609,7 @@ function RequestRow({
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
               >
-                {request.txHash!.slice(0, 10)}…
+                {hashLabel(request.txHash!)}
               </a>
             ) : null}
           </div>
@@ -528,19 +619,16 @@ function RequestRow({
       {open ? (
         <div className="panel" style={{ padding: 20, margin: "10px 0 20px" }}>
           <div className="detail-grid">
-            <Detail label="Amount" value={`${request.amount}`} />
+            <Detail label="Amount" value={request.amount} />
             <Detail label="Reason" value={request.reason || "—"} />
-            <Detail label="Created" value={request.createdAt.slice(0, 19).replace("T", " ")} />
-            <Detail
-              label="Finalised"
-              value={request.paidAt ? request.paidAt.slice(0, 19).replace("T", " ") : "—"}
-            />
+            <Detail label="Created" value={whenText(request.createdAt)} />
+            <Detail label="Finalised" value={request.paidAt ? whenText(request.paidAt) : "—"} />
             <Detail label="Settled by" value={request.settledBy ?? "—"} />
             <Detail label="Reference" value={request.id} />
           </div>
 
           {hasHash ? (
-            <p style={{ marginTop: 16, fontSize: "0.85rem" }}>
+            <p style={{ marginTop: 16, fontSize: "0.85rem", wordBreak: "break-all" }}>
               <span className="faint" style={{ marginRight: 8 }}>
                 Tx
               </span>
@@ -555,12 +643,48 @@ function RequestRow({
             </p>
           ) : null}
 
+          {possible && request.status === "waiting" ? (
+            <div
+              className="panel"
+              style={{ padding: 14, marginTop: 16, background: "rgba(244,241,234,0.02)" }}
+            >
+              <p className="eyebrow" style={{ margin: "0 0 8px" }}>
+                Possible match
+              </p>
+              <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.88rem" }}>
+                A transfer of {formatAmount(possible.amountUnits, 6)} to you from{" "}
+                {possible.from.slice(0, 10)}… carries no reference, so Pinna will not call it
+                paid on its own. If this is the payment, confirm it.
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <a
+                  className="hash-link"
+                  style={{ fontSize: "0.8rem" }}
+                  href={explorerForRecord({}, network, possible.txHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {hashLabel(possible.txHash)}
+                </a>
+                {onAcceptPossible ? (
+                  <button className="pdf-again" onClick={() => onAcceptPossible(possible)}>
+                    Yes, this is it
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <div style={{ display: "flex", gap: 12, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
             <button className="pdf-again" onClick={onPdf}>
               {request.status === "paid" ? "Redownload PDF" : "Download PDF"}
             </button>
             {onMarkPaid && request.status === "waiting" ? (
-              <button className="nav-link" onClick={onMarkPaid} style={{ background: "transparent", border: 0, cursor: "pointer" }}>
+              <button
+                className="nav-link"
+                onClick={onMarkPaid}
+                style={{ background: "transparent", border: 0, cursor: "pointer" }}
+              >
                 Mark paid
               </button>
             ) : null}
@@ -574,7 +698,11 @@ function RequestRow({
               </button>
             ) : null}
             {onAttachLink && request.status === "waiting" && !request.hasLink ? (
-              <button className="nav-link" onClick={onAttachLink} style={{ background: "transparent", border: 0, cursor: "pointer" }}>
+              <button
+                className="nav-link"
+                onClick={onAttachLink}
+                style={{ background: "transparent", border: 0, cursor: "pointer" }}
+              >
                 Attach a pay link
               </button>
             ) : null}
