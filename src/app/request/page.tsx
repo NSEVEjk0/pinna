@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { RowsEditor, newRow, payableRows } from "@/components/RowsEditor";
 import { usePinna } from "@/lib/usePinna";
 import { displayName, formatAmount, listTotal, type PayableRow } from "@/lib/money";
 import { newReference } from "@/lib/memo";
-import { draftMessage, payLinkUrl } from "@/lib/paylink";
+import { draftMessage, payLinkUrl, reminderMessage } from "@/lib/paylink";
 import { downloadReceipt } from "@/lib/receipt";
+import { requestGreeting } from "@/lib/profile";
+import { useDraftContact } from "@/lib/useDraftContact";
 import type { PaymentRequest } from "@/lib/requests";
 
 type Stage = "edit" | "confirm" | "created";
@@ -19,15 +21,42 @@ interface DraftExtras {
 }
 
 export default function RequestPage() {
-  const { address, isConnected, contacts, network, token, saveContact, saveRequest, requests } = usePinna();
+  const {
+    address,
+    isConnected,
+    contacts,
+    network,
+    token,
+    alias,
+    saveAlias,
+    saveContact,
+    saveRequest,
+    requests,
+    notify,
+  } = usePinna();
+  const { consume } = useDraftContact("request");
   const [rows, setRows] = useState<PayableRow[]>([newRow()]);
   const [extras, setExtras] = useState<Record<string, DraftExtras>>({});
   const [stage, setStage] = useState<Stage>("edit");
   const [created, setCreated] = useState<PaymentRequest[]>([]);
   const [origin, setOrigin] = useState("");
+  const [fromName, setFromName] = useState(alias);
 
   const ready = useMemo(() => payableRows(rows), [rows]);
   const total = useMemo(() => (ready.length ? listTotal(ready) : 0n), [ready]);
+
+  useEffect(() => {
+    setFromName(alias);
+  }, [alias]);
+
+  useEffect(() => {
+    const draft = consume();
+    if (!draft) return;
+    setRows((prev) => {
+      const first = { ...prev[0], name: draft.name, address: draft.address };
+      return [first, ...prev.slice(1)];
+    });
+  }, [consume]);
 
   function update(id: string, patch: Partial<PayableRow>) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -43,6 +72,8 @@ export default function RequestPage() {
 
   function confirm() {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
+    // The name used here becomes the name on future requests too.
+    if (fromName.trim() && fromName.trim() !== alias) saveAlias(fromName);
     setStage("confirm");
   }
 
@@ -58,13 +89,18 @@ export default function RequestPage() {
         partyAddress: row.address,
         amount: row.amount,
         reason: row.reason ?? "",
-        message: choice.message ? undefined : undefined,
         hasLink: choice.link,
         hasPdf: choice.pdf,
         status: "waiting",
         createdAt: at,
       };
       saveRequest(request);
+      notify({
+        kind: "request_created",
+        title: `Requested ${request.amount} ${token.symbol}`,
+        detail: `From ${request.partyName || request.partyAddress}${request.reason ? ` · ${request.reason}` : ""}`,
+        requestId: request.id,
+      });
       if (row.name.trim()) saveContact({ address: row.address, name: row.name.trim() }, true);
       return request;
     });
@@ -74,7 +110,7 @@ export default function RequestPage() {
 
   if (!isConnected) {
     return (
-      <div className="shell fade-in" style={{ paddingTop: 80 }}>
+      <div className="shell fade-in" style={{ paddingTop: 40 }}>
         <h1 className="display" style={{ fontSize: "clamp(1.9rem, 4.2vw, 2.8rem)", margin: "0 0 14px" }}>
           Connect a wallet to request
         </h1>
@@ -85,8 +121,10 @@ export default function RequestPage() {
     );
   }
 
+  const greeting = requestGreeting(fromName || alias, ready[0]?.reason || "the shared cost");
+
   return (
-    <div className="shell fade-in" style={{ paddingTop: 56, paddingBottom: 40 }}>
+    <div className="shell fade-in" style={{ paddingTop: 8, paddingBottom: 40 }}>
       <p className="eyebrow" style={{ margin: "0 0 14px" }}>
         Request
       </p>
@@ -96,10 +134,28 @@ export default function RequestPage() {
           <h1 className="display" style={{ fontSize: "clamp(2rem, 4.6vw, 3.2rem)", margin: "0 0 12px", maxWidth: "24ch" }}>
             Ask for what you are owed.
           </h1>
-          <p className="muted" style={{ maxWidth: "56ch", margin: "0 0 44px" }}>
+          <p className="muted" style={{ maxWidth: "56ch", margin: "0 0 34px" }}>
             Each row becomes a request that sits under Waiting until it is paid — by a link, by a
             PDF you send, or simply as a reminder you keep yourself.
           </p>
+
+          <label style={{ display: "block", maxWidth: 380, marginBottom: 30 }}>
+            <span
+              className="faint"
+              style={{ fontSize: "0.72rem", letterSpacing: "0.14em", textTransform: "uppercase" }}
+            >
+              Your name on this request
+            </span>
+            <input
+              className="field"
+              value={fromName}
+              placeholder="Jake"
+              onChange={(e) => setFromName(e.target.value)}
+            />
+            <span className="faint" style={{ display: "block", fontSize: "0.78rem", marginTop: 8 }}>
+              “{greeting}”
+            </span>
+          </label>
 
           <RowsEditor
             rows={rows}
@@ -120,6 +176,9 @@ export default function RequestPage() {
               See what is waiting
             </Link>
           </div>
+          <p className="faint" style={{ fontSize: "0.82rem", marginTop: 14 }}>
+            Amounts must be above zero. A request of nothing is not a request.
+          </p>
         </>
       ) : null}
 
@@ -130,7 +189,8 @@ export default function RequestPage() {
           </h1>
           <p className="muted" style={{ margin: "0 0 34px", maxWidth: "56ch" }}>
             A pay link lets them pay on Tempo in one tap. A PDF is for sending yourself. Choosing
-            neither keeps it as a reminder — it still shows up under Waiting.
+            neither keeps it as a reminder — it still shows up under Waiting, and you can attach a
+            link later.
           </p>
 
           <div style={{ borderTop: "1px solid var(--hairline)" }}>
@@ -138,7 +198,15 @@ export default function RequestPage() {
               const choice = extrasFor(row.id);
               return (
                 <div key={row.id} style={{ padding: "22px 0", borderBottom: "1px solid var(--hairline)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 20,
+                      alignItems: "baseline",
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <div>
                       <p style={{ margin: 0, fontSize: "1.05rem" }}>{displayName(row)}</p>
                       <p className="muted" style={{ margin: "4px 0 0", fontSize: "0.9rem" }}>
@@ -150,21 +218,13 @@ export default function RequestPage() {
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: 22, marginTop: 14, flexWrap: "wrap" }}>
-                    <Toggle
-                      label="Pay link"
-                      checked={choice.link}
-                      onChange={(v) => setExtrasFor(row.id, { link: v })}
-                    />
+                    <Toggle label="Pay link" checked={choice.link} onChange={(v) => setExtrasFor(row.id, { link: v })} />
                     <Toggle
                       label="Draft message"
                       checked={choice.message}
                       onChange={(v) => setExtrasFor(row.id, { message: v })}
                     />
-                    <Toggle
-                      label="PDF"
-                      checked={choice.pdf}
-                      onChange={(v) => setExtrasFor(row.id, { pdf: v })}
-                    />
+                    <Toggle label="PDF" checked={choice.pdf} onChange={(v) => setExtrasFor(row.id, { pdf: v })} />
                   </div>
                 </div>
               );
@@ -195,7 +255,8 @@ export default function RequestPage() {
             Ready.
           </h1>
           <p className="muted" style={{ margin: "0 0 32px" }}>
-            Every one of these is under Waiting until the money lands.
+            Every one of these is under Waiting until the money lands. You can cancel any of them
+            from History.
           </p>
 
           {created.map((request) => {
@@ -203,14 +264,13 @@ export default function RequestPage() {
             const url = payLinkUrl(origin || "https://pinna.app", {
               id: request.id,
               to: request.hostAddress,
-              hostName: "",
+              hostName: fromName || alias,
               amount: request.amount,
               reason: request.reason,
               message: request.message,
               token: token.symbol,
               network: network.name,
             });
-            const useLink = request.hasLink;
             return (
               <div key={request.id} className="panel" style={{ padding: 22, marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -228,7 +288,7 @@ export default function RequestPage() {
                   reference {request.id}
                 </p>
 
-                {useLink ? (
+                {request.hasLink ? (
                   <>
                     <p className="eyebrow" style={{ margin: "18px 0 8px" }}>
                       Pay link
@@ -237,10 +297,7 @@ export default function RequestPage() {
                       {url}
                     </p>
                     <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                      <button
-                        className="button button-quiet"
-                        onClick={() => navigator.clipboard?.writeText(url)}
-                      >
+                      <button className="button button-quiet" onClick={() => navigator.clipboard?.writeText(url)}>
                         Copy link
                       </button>
                       {choice.message ? (
@@ -249,7 +306,7 @@ export default function RequestPage() {
                           onClick={() =>
                             navigator.clipboard?.writeText(
                               draftMessage({
-                                hostName: "",
+                                hostName: fromName || alias,
                                 partyName: request.partyName,
                                 amount: request.amount,
                                 reason: request.reason,
@@ -268,10 +325,31 @@ export default function RequestPage() {
                     </div>
                   </>
                 ) : (
-                  <p className="muted" style={{ marginTop: 16, fontSize: "0.9rem" }}>
-                    No link — this one is a reminder. It stays under Waiting until you mark it paid
-                    or a matching transfer arrives.
-                  </p>
+                  <>
+                    <p className="muted" style={{ marginTop: 16, fontSize: "0.9rem" }}>
+                      No link — this one is a reminder. It stays under Waiting until you mark it
+                      paid or a matching transfer arrives.
+                    </p>
+                    <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+                      <button
+                        className="button button-quiet"
+                        onClick={() =>
+                          navigator.clipboard?.writeText(
+                            reminderMessage({
+                              hostName: fromName || alias,
+                              partyName: request.partyName,
+                              amount: request.amount,
+                              reason: request.reason,
+                              tokenSymbol: token.symbol,
+                              reference: request.id,
+                            })
+                          )
+                        }
+                      >
+                        Copy reminder
+                      </button>
+                    </div>
+                  </>
                 )}
 
                 {request.hasPdf ? (
@@ -281,6 +359,7 @@ export default function RequestPage() {
                       onClick={() =>
                         downloadReceipt({
                           title: "Request draft",
+                          subject: `Reference ${request.id}`,
                           rows: [
                             {
                               id: request.id,

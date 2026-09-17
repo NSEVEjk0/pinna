@@ -5,7 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useConnection, useConnect, useDisconnect } from "wagmi";
 import { Wordmark } from "./Fern";
+import { NetworkSwitch } from "./NetworkSwitch";
 import { shortAddress } from "@/lib/money";
+import { usePinna } from "@/lib/usePinna";
+import { unreadCount } from "@/lib/events";
 
 function ConnectButton() {
   const { address, isConnected } = useConnection();
@@ -15,12 +18,7 @@ function ConnectButton() {
 
   if (isConnected && address) {
     return (
-      <button
-        type="button"
-        className="nav-link"
-        onClick={() => disconnect()}
-        title="Disconnect"
-      >
+      <button type="button" className="nav-link" onClick={() => disconnect()} title="Disconnect">
         <span className="mono">{shortAddress(address)}</span>
         <span className="faint" style={{ marginLeft: 8 }}>
           disconnect
@@ -43,7 +41,7 @@ function ConnectButton() {
             top: "calc(100% + 10px)",
             background: "#191919",
             minWidth: 220,
-            zIndex: 20,
+            zIndex: 30,
             padding: 8,
           }}
         >
@@ -83,36 +81,61 @@ function ConnectButton() {
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const { events } = usePinna();
+  const unread = unreadCount(events);
+
   const links = [
     { href: "/", label: "Home" },
     { href: "/contacts", label: "Contacts" },
     { href: "/history", label: "History" },
   ];
+
   return (
     <header className="hairline">
       <div
-        className="shell"
+        className="shell header-row"
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "22px 0",
+          gap: 20,
+          padding: "20px 0",
+          flexWrap: "wrap",
         }}
       >
         <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
           <Wordmark />
         </Link>
-        <nav style={{ display: "flex", alignItems: "center", gap: 26 }}>
+        <nav style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
           {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className="nav-link"
-              data-active={pathname === l.href}
-            >
+            <Link key={l.href} href={l.href} className="nav-link" data-active={pathname === l.href}>
               {l.label}
             </Link>
           ))}
+          <Link
+            href="/notifications"
+            className="nav-link"
+            data-active={pathname === "/notifications"}
+            title="Notifications"
+          >
+            Notifications
+            {unread > 0 ? (
+              <span
+                className="mono"
+                style={{
+                  marginLeft: 8,
+                  background: "var(--sage)",
+                  color: "#10140f",
+                  borderRadius: 999,
+                  padding: "1px 7px",
+                  fontSize: "0.7rem",
+                }}
+              >
+                {unread}
+              </span>
+            ) : null}
+          </Link>
+          <NetworkSwitch />
           <ConnectButton />
         </nav>
       </div>

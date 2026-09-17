@@ -4,6 +4,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { BackButton } from "@/components/BackButton";
+import { AliasPrompt } from "@/components/AliasPrompt";
 import { BRAND } from "@/lib/brand";
 
 const display = Fraunces({
@@ -30,8 +32,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Providers>
           <SiteHeader />
+          <div className="shell">
+            {/* Every screen except home gets a way back. */}
+            <BackButton />
+          </div>
           <main>{children}</main>
           <SiteFooter />
+          <AliasPrompt />
         </Providers>
       </body>
     </html>

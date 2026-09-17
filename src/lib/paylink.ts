@@ -16,9 +16,7 @@ export interface PayLinkPayload {
   message?: string;
   token: string;
   network: string;
-}
-
-function base64UrlEncode(input: string): string {
+}function base64UrlEncode(input: string): string {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
   bytes.forEach((b) => {
@@ -85,14 +83,69 @@ export function draftMessage(input: {
   url: string;
   tokenSymbol: string;
 }): string {
+  const who = input.hostName?.trim();
+  const opening = who ? `Hi ${input.partyName || "there"} — it's me ${who}.` : `Hi ${input.partyName || "there"}.`;
   const lines = [
-    `Hi ${input.partyName || "there"} — ${input.hostName || "I"} here.`,
+    opening,
     "",
     `${input.amount} ${input.tokenSymbol} for ${input.reason || "our shared costs"}.`,
     "",
     `Pay on Tempo: ${input.url}`,
     "",
     "The transfer carries a reference, so it is matched to this request automatically.",
+  ];
+  return lines.join("\n");
+}
+
+/** A reminder for requests that carry no link. */
+export function reminderMessage(input: {
+  hostName: string;
+  partyName: string;
+  amount: string;
+  reason: string;
+  tokenSymbol: string;
+  reference: string;
+}): string {
+  const who = input.hostName?.trim();
+  const lines = [
+    who ? `Hi ${input.partyName || "there"} — it's me ${who}.` : `Hi ${input.partyName || "there"}.`,
+    "",
+    `A reminder about ${input.amount} ${input.tokenSymbol} for ${input.reason || "our shared costs"}.`,
+    "",
+    `Reference: ${input.reference}`,
+    "",
+    "Pay me on Tempo whenever suits — the amount and reference are above.",
+  ];
+  return lines.join("\n");
+}
+
+/**
+ * The message a payer sends back once they have paid: the confirmation the
+ * person who asked can keep, with the receipt and the reference in it.
+ */
+export function paymentConfirmation(input: {
+  payerName: string;
+  hostName: string;
+  amount: string;
+  reason: string;
+  tokenSymbol: string;
+  txHash: string;
+  explorerUrl: string;
+  reference: string;
+}): string {
+  const payer = input.payerName?.trim() || "I";
+  const to = input.hostName?.trim();
+  const lines = [
+    to ? `Hi ${to} — ${payer} here.` : `Hi — ${payer} here.`,
+    "",
+    `I have completed payment for what was in the request: ${input.amount} ${input.tokenSymbol}${
+      input.reason ? ` for ${input.reason}` : ""
+    }.`,
+    "",
+    `Reference: ${input.reference}`,
+    `Transaction: ${input.explorerUrl || input.txHash}`,
+    "",
+    "Sent on Tempo — the transfer carries the reference, so it matches your request.",
   ];
   return lines.join("\n");
 }

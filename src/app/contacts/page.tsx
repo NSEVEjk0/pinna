@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePinna } from "@/lib/usePinna";
 import { isValidAddress, shortAddress } from "@/lib/money";
+import type { Contact } from "@/lib/storage";
 
 export default function ContactsPage() {
   const { isConnected, contacts, saveContact, dropContact } = usePinna();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Contact | null>(null);
 
   function add() {
     setError(null);
@@ -25,9 +29,20 @@ export default function ContactsPage() {
     setAddress("");
   }
 
+  function go(contact: Contact, mode: "send" | "request") {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "pinna:draft:contact",
+        JSON.stringify({ address: contact.address, name: contact.name, mode })
+      );
+    }
+    setSelected(null);
+    router.push(mode === "send" ? "/send" : "/request");
+  }
+
   if (!isConnected) {
     return (
-      <div className="shell fade-in" style={{ paddingTop: 80 }}>
+      <div className="shell fade-in" style={{ paddingTop: 40 }}>
         <h1 className="display" style={{ fontSize: "clamp(1.9rem, 4.2vw, 2.8rem)", margin: "0 0 14px" }}>
           Connect a wallet to keep contacts
         </h1>
@@ -39,7 +54,7 @@ export default function ContactsPage() {
   }
 
   return (
-    <div className="shell fade-in" style={{ paddingTop: 56, paddingBottom: 40 }}>
+    <div className="shell fade-in" style={{ paddingTop: 8, paddingBottom: 40 }}>
       <p className="eyebrow" style={{ margin: "0 0 14px" }}>
         Contacts
       </p>
@@ -48,7 +63,7 @@ export default function ContactsPage() {
       </h1>
       <p className="muted" style={{ maxWidth: "56ch", margin: "0 0 44px" }}>
         Names you type yourself. Pinna never guesses who an address is — it only remembers what you
-        called them.
+        called them. Tap a name to send to them or request from them.
       </p>
 
       <div
@@ -63,18 +78,19 @@ export default function ContactsPage() {
         className="row-grid"
       >
         <label>
-          <span className="faint" style={{ fontSize: "0.75rem", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+          <span
+            className="faint"
+            style={{ fontSize: "0.72rem", letterSpacing: "0.14em", textTransform: "uppercase" }}
+          >
             Name
           </span>
-          <input
-            className="field"
-            value={name}
-            placeholder="Franklin"
-            onChange={(e) => setName(e.target.value)}
-          />
+          <input className="field" value={name} placeholder="Franklin" onChange={(e) => setName(e.target.value)} />
         </label>
         <label>
-          <span className="faint" style={{ fontSize: "0.75rem", letterSpacing: "0.14em", textTransform: "uppercase" }}>
+          <span
+            className="faint"
+            style={{ fontSize: "0.72rem", letterSpacing: "0.14em", textTransform: "uppercase" }}
+          >
             Tempo address
           </span>
           <input
@@ -98,15 +114,16 @@ export default function ContactsPage() {
       ) : (
         <div style={{ marginTop: 32, borderTop: "1px solid var(--hairline)" }}>
           {contacts.map((contact) => (
-            <div
+            <button
               key={contact.address}
+              type="button"
+              className="history-row"
+              onClick={() => setSelected(contact)}
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "baseline",
                 gap: 20,
-                padding: "18px 0",
-                borderBottom: "1px solid var(--hairline)",
                 flexWrap: "wrap",
               }}
             >
@@ -116,21 +133,65 @@ export default function ContactsPage() {
                   {shortAddress(contact.address, 10, 6)}
                 </p>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-                <span className="chip">{contact.useCount} use{contact.useCount === 1 ? "" : "s"}</span>
-                <button
-                  type="button"
-                  className="nav-link"
-                  onClick={() => dropContact(contact.address)}
-                  style={{ background: "transparent", border: 0, cursor: "pointer" }}
-                >
-                  Remove
-                </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <span className="chip">
+                  {contact.useCount} use{contact.useCount === 1 ? "" : "s"}
+                </span>
+                <span className="faint" style={{ fontSize: "0.85rem" }}>
+                  open
+                </span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
+
+      {selected ? (
+        <div className="sheet-backdrop" onClick={() => setSelected(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={selected.name}>
+            <p className="eyebrow" style={{ margin: "0 0 8px" }}>
+              Contact
+            </p>
+            <h2 className="display" style={{ fontSize: "1.7rem", margin: "0 0 6px" }}>
+              {selected.name}
+            </h2>
+            <p className="faint mono" style={{ margin: "0 0 24px", fontSize: "0.8rem", wordBreak: "break-all" }}>
+              {selected.address}
+            </p>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <button className="button" onClick={() => go(selected, "send")}>
+                Send money to {selected.name}
+              </button>
+              <button className="button button-quiet" onClick={() => go(selected, "request")}>
+                Request money from {selected.name}
+              </button>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24, gap: 12 }}>
+              <button
+                type="button"
+                className="nav-link"
+                style={{ background: "transparent", border: 0, cursor: "pointer", color: "#c98b7f" }}
+                onClick={() => {
+                  dropContact(selected.address);
+                  setSelected(null);
+                }}
+              >
+                Remove contact
+              </button>
+              <button
+                type="button"
+                className="nav-link"
+                style={{ background: "transparent", border: 0, cursor: "pointer" }}
+                onClick={() => setSelected(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

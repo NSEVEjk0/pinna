@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSendTransactionSync } from "wagmi";
 import { RowsEditor, newRow, payableRows } from "@/components/RowsEditor";
@@ -9,14 +9,16 @@ import { buildBatch } from "@/lib/batch";
 import { formatAmount, groupByRecipient, listTotal, displayName, type PayableRow } from "@/lib/money";
 import { explorerTxUrl } from "@/lib/tempo";
 import { downloadReceipt } from "@/lib/receipt";
-import { useEnsureTempoChain } from "@/lib/useEnsureTempoChain";
+import { useActiveNetwork } from "@/lib/useActiveNetwork";
+import { useDraftContact } from "@/lib/useDraftContact";
 
 type Stage = "edit" | "review" | "sent";
 
 export default function SendPage() {
   const { address, isConnected, contacts, network, token, saveContact, recordSent } = usePinna();
   const { ensure, onRightChain, pending: switching, error: chainError, network: activeNet } =
-    useEnsureTempoChain();
+    useActiveNetwork();
+  const { consume } = useDraftContact("send");
   const [rows, setRows] = useState<PayableRow[]>([newRow(), newRow()]);
   const [stage, setStage] = useState<Stage>("edit");
   const [txHash, setTxHash] = useState<string>("");
@@ -24,6 +26,16 @@ export default function SendPage() {
   const [sending, setSending] = useState(false);
 
   const { sendTransactionSync } = useSendTransactionSync();
+
+  // A contact chosen on the Contacts screen arrives as the first row.
+  useEffect(() => {
+    const draft = consume();
+    if (!draft) return;
+    setRows((prev) => {
+      const first = { ...prev[0], name: draft.name, address: draft.address };
+      return [first, ...prev.slice(1)];
+    });
+  }, [consume]);
 
   const ready = useMemo(() => payableRows(rows), [rows]);
   const total = useMemo(() => (ready.length ? listTotal(ready) : 0n), [ready]);

@@ -37,6 +37,18 @@ export function isAmountInput(input: string, decimals = DEFAULT_DECIMALS): boole
   }
 }
 
+/**
+ * A payment has to be worth something. Anything above zero is allowed, however
+ * small — but zero and blanks are not payments.
+ */
+export function isPositiveAmount(input: string, decimals = DEFAULT_DECIMALS): boolean {
+  try {
+    return parseAmount(input, decimals) > 0n;
+  } catch {
+    return false;
+  }
+}
+
 export function sumAmounts(inputs: string[], decimals = DEFAULT_DECIMALS): bigint {
   return inputs.reduce((acc, v) => acc + parseAmount(v, decimals), 0n);
 }

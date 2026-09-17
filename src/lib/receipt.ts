@@ -3,7 +3,8 @@ import { formatAmount, parseAmount, DEFAULT_DECIMALS } from "./money";
 
 /**
  * Receipts are generated in the browser from the same rows that were signed,
- * so the PDF always matches the batch that went out.
+ * so the PDF always matches what went out — and it is set in Pinna's own
+ * palette: charcoal, sage, and bone.
  */
 
 export interface ReceiptInput {
@@ -17,6 +18,8 @@ export interface ReceiptInput {
   from: string;
   decimals?: number;
   note?: string;
+  /** Optional label for the person or list this receipt belongs to. */
+  subject?: string;
 }
 
 export interface ReceiptLine {
@@ -37,7 +40,16 @@ export interface ReceiptModel {
   explorerUrl: string;
   lines: ReceiptLine[];
   note?: string;
+  subject?: string;
 }
+
+export const RECEIPT_PALETTE = {
+  coal: [22, 22, 22] as [number, number, number],
+  sage: [122, 154, 126] as [number, number, number],
+  bone: [244, 241, 234] as [number, number, number],
+  line: [214, 214, 208] as [number, number, number],
+  muted: [120, 120, 116] as [number, number, number],
+};
 
 /** Build the flat model the PDF renders from — and what the tests check. */
 export function receiptModel(input: ReceiptInput): ReceiptModel {
@@ -56,6 +68,7 @@ export function receiptModel(input: ReceiptInput): ReceiptModel {
     txHash: input.txHash,
     explorerUrl: input.explorerUrl,
     note: input.note,
+    subject: input.subject,
     lines: input.rows.map((r) => ({
       name: r.name || r.address,
       address: r.address,
@@ -81,101 +94,167 @@ export async function downloadReceipt(input: ReceiptInput, filename?: string): P
   const model = receiptModel(input);
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 56;
-  let y = 72;
 
-  doc.setFont("times", "normal");
-  doc.setFontSize(26);
-  doc.text("Pinna", margin, y);
-  doc.setFontSize(11);
-  doc.setTextColor(120);
-  doc.text(model.title, margin, y + 18);
-  doc.setTextColor(0);
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 48;
+  const { coal, sage, bone, line, muted } = RECEIPT_PALETTE;
 
-  y += 64;
-  doc.setDrawColor(200);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 24;
+  // Charcoal masthead, the one block of colour on the page.
+  doc.setFillColor(coal[0], coal[1], coal[2]);
+  doc.rect(0, 0, pageW, 132, "F");
 
-  doc.setFontSize(10);
-  doc.setTextColor(110);
-  doc.text("ISSUED", margin, y);
-  doc.text("NETWORK", margin + 220, y);
-  doc.text("PAID TO YOU", margin + 380, y);
-  doc.setTextColor(0);
-  doc.setFontSize(11);
-  doc.text(stamp(model.issuedAt), margin, y + 16);
-  doc.text(model.network, margin + 220, y + 16);
-  doc.text(model.from, margin + 380, y + 16);
-
-  y += 56;
-  doc.setFontSize(10);
-  doc.setTextColor(110);
-  doc.text("PAYMENT", margin, y);
-  doc.text("REFERENCE", margin + 300, y);
-  doc.text("AMOUNT", pageWidth - margin, y, { align: "right" });
-  doc.setTextColor(0);
-  y += 8;
-  doc.setDrawColor(220);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 20;
-
-  doc.setFontSize(11);
-  for (const line of model.lines) {
-    const yLine = y;
-    doc.text(line.name.slice(0, 34), margin, yLine);
-    if (line.reason) {
-      doc.setFontSize(9);
-      doc.setTextColor(130);
-      doc.text(line.reason.slice(0, 46), margin + 300, yLine);
-      doc.setFontSize(11);
-      doc.setTextColor(0);
-    }
-    doc.text(`${line.amount} ${model.tokenSymbol}`, pageWidth - margin, yLine, {
-      align: "right",
-    });
-    y += 14;
-    doc.setFontSize(9);
-    doc.setTextColor(150);
-    doc.text(line.address, margin, y);
-    doc.setTextColor(0);
-    doc.setFontSize(11);
-    y += 22;
+  // Fern mark, drawn the same geometric way as the app's logo.
+  const fx = margin + 6;
+  const fy = 34;
+  doc.setDrawColor(sage[0], sage[1], sage[2]);
+  doc.setLineWidth(1.1);
+  doc.line(fx, fy + 58, fx, fy + 10);
+  for (let i = 0; i < 6; i++) {
+    const y = fy + 54 - i * 8;
+    const reach = 15 - i * 1.8;
+    doc.line(fx, y, fx - reach, y - reach * 0.7);
+    doc.line(fx, y, fx + reach, y - reach * 0.7);
   }
 
-  y += 6;
-  doc.setDrawColor(200);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 22;
-  doc.setFontSize(12);
-  doc.text("Total", margin, y);
-  doc.text(`${model.total} ${model.tokenSymbol}`, pageWidth - margin, y, { align: "right" });
-
-  y += 40;
+  doc.setTextColor(bone[0], bone[1], bone[2]);
+  doc.setFont("times", "normal");
+  doc.setFontSize(30);
+  doc.text("Pinna", margin + 44, 62);
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text("Tempo transaction", margin, y);
-  doc.setTextColor(0);
-  doc.setFontSize(10);
-  doc.text(model.txHash, margin, y + 14);
+  doc.setTextColor(sage[0], sage[1], sage[2]);
+  doc.text("NAMES AND REMINDERS · DOLLARS MOVE ON TEMPO", margin + 44, 78);
+
+  doc.setFontSize(11);
+  doc.setTextColor(bone[0], bone[1], bone[2]);
+  doc.text(model.title, margin + 44, 100);
+  if (model.subject) {
+    doc.setFontSize(9);
+    doc.setTextColor(muted[0], muted[1], muted[2]);
+    doc.text(model.subject, pageW - margin, 100, { align: "right" });
+  }
+
+  let y = 168;
+
+  // Fact row
+  const facts: [string, string][] = [
+    ["ISSUED", stamp(model.issuedAt)],
+    ["NETWORK", model.network],
+    ["FROM", model.from],
+  ];
+  doc.setFontSize(7.5);
+  doc.setTextColor(muted[0], muted[1], muted[2]);
+  facts.forEach(([label], i) => {
+    doc.text(label, margin + i * 168, y);
+  });
+  doc.setFontSize(9.5);
+  doc.setTextColor(coal[0], coal[1], coal[2]);
+  facts.forEach(([, value], i) => {
+    doc.text(String(value).slice(0, 30), margin + i * 168, y + 14);
+  });
+
+  y += 38;
+  doc.setDrawColor(sage[0], sage[1], sage[2]);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 18;
+
+  // Column heads
+  doc.setFontSize(7.5);
+  doc.setTextColor(muted[0], muted[1], muted[2]);
+  doc.text("PAYMENT", margin, y);
+  doc.text("REFERENCE", margin + 250, y);
+  doc.text("AMOUNT", pageW - margin, y, { align: "right" });
+  y += 8;
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageW - margin, y);
+  y += 18;
+
+  // Rows
+  for (const entry of model.lines) {
+    doc.setFont("times", "normal");
+    doc.setFontSize(12);
+    doc.setTextColor(coal[0], coal[1], coal[2]);
+    doc.text(entry.name.slice(0, 34), margin, y);
+
+    if (entry.reason) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(sage[0], sage[1], sage[2]);
+      doc.text(entry.reason.slice(0, 44), margin + 250, y);
+    }
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(coal[0], coal[1], coal[2]);
+    doc.text(`${entry.amount} ${model.tokenSymbol}`, pageW - margin, y, { align: "right" });
+
+    y += 12;
+    doc.setFontSize(7.5);
+    doc.setTextColor(muted[0], muted[1], muted[2]);
+    doc.text(entry.address, margin, y);
+    y += 20;
+
+    if (y > pageH - 170) {
+      doc.addPage();
+      y = 72;
+    }
+  }
+
+  // Total
+  doc.setDrawColor(sage[0], sage[1], sage[2]);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 22;
+  doc.setFont("times", "normal");
+  doc.setFontSize(15);
+  doc.setTextColor(coal[0], coal[1], coal[2]);
+  doc.text("Total", margin, y);
+  doc.text(`${model.total} ${model.tokenSymbol}`, pageW - margin, y, { align: "right" });
+
+  // Transaction block
+  y += 40;
+  doc.setFillColor(246, 245, 241);
+  doc.rect(margin, y - 14, pageW - margin * 2, 76, "F");
+  doc.setFontSize(7.5);
+  doc.setTextColor(muted[0], muted[1], muted[2]);
+  doc.text("TEMPO TRANSACTION", margin + 12, y);
+  doc.setFont("courier", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(coal[0], coal[1], coal[2]);
+  const hash = model.txHash || "—";
+  doc.text(hash.slice(0, 50), margin + 12, y + 16);
+  if (hash.length > 50) doc.text(hash.slice(50), margin + 12, y + 28);
   if (model.explorerUrl) {
-    doc.setTextColor(110);
-    doc.textWithLink(model.explorerUrl, margin, y + 30, { url: model.explorerUrl });
-    doc.setTextColor(0);
+    doc.setTextColor(sage[0], sage[1], sage[2]);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.textWithLink(model.explorerUrl, margin + 12, y + 44, { url: model.explorerUrl });
   }
 
   if (model.note) {
-    y += 56;
-    doc.setFontSize(9);
-    doc.setTextColor(120);
-    doc.text(model.note.slice(0, 400), margin, y, { maxWidth: pageWidth - margin * 2 });
+    y += 92;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(muted[0], muted[1], muted[2]);
+    doc.text(model.note.slice(0, 300), margin, y, { maxWidth: pageW - margin * 2 });
   }
 
-  doc.setFontSize(8);
-  doc.setTextColor(150);
-  doc.text("Paid on Tempo. Each transfer carried a reference memo.", margin, doc.internal.pageSize.getHeight() - 48);
+  // Footer rule + credit
+  doc.setDrawColor(line[0], line[1], line[2]);
+  doc.setLineWidth(0.5);
+  doc.line(margin, pageH - 62, pageW - margin, pageH - 62);
+  doc.setFontSize(7.5);
+  doc.setTextColor(muted[0], muted[1], muted[2]);
+  doc.text("Paid on Tempo. Every transfer carried a reference memo.", margin, pageH - 46);
+  doc.setTextColor(sage[0], sage[1], sage[2]);
+  doc.textWithLink("Pinna · https://x.com/CRYPTFRANI", pageW - margin, pageH - 46, {
+    url: "https://x.com/CRYPTFRANI",
+    align: "right",
+  });
 
-  const name = filename || `pinna-${model.txHash.slice(2, 10)}.pdf`;
+  const name = filename || `pinna-${hash.slice(2, 10) || "receipt"}.pdf`;
   doc.save(name);
 }
