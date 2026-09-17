@@ -20,7 +20,7 @@ import { loadEvents, markAllRead, pushEvent, type PinnaEvent } from "./events";
 import { loadAlias, saveAlias as persistAlias } from "./profile";
 import { loadLedger, loadLastSync, saveLastSync, saveLedger } from "./storage";
 import { buildLedger, type LedgerEntry } from "./ledger";
-import { readWalletTransfers, DEFAULT_LOOKBACK } from "./chain";
+import { readWalletTransfers, DEEP_LOOKBACK } from "./chain";
 import { markPaid, type PaymentRequest } from "./requests";
 
 /**
@@ -79,7 +79,7 @@ export function usePinna() {
         // A quiet automatic pass looks at recent history only; the manual
       // "Sync from Tempo" button reaches much further back.
       const transfers = await readWalletTransfers(network, token.address, address, {
-        lookbackBlocks: options.quiet ? 150_000n : DEFAULT_LOOKBACK,
+        lookbackBlocks: options.quiet ? 1_000_000n : DEEP_LOOKBACK,
       });
         const nameFor = (addr: string) =>
           loadContacts(address).find((c) => c.address.toLowerCase() === addr.toLowerCase())?.name;

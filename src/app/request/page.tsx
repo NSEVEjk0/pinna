@@ -34,7 +34,7 @@ export default function RequestPage() {
     requests,
     notify,
   } = usePinna();
-  const { consume } = useDraftContact("request");
+  const consume = useDraftContact("request");
   const [rows, setRows] = useState<PayableRow[]>([newRow()]);
   const [extras, setExtras] = useState<Record<string, DraftExtras>>({});
   const [stage, setStage] = useState<Stage>("edit");

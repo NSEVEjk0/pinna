@@ -85,6 +85,9 @@ async function getLogsChunked(
  */
 export const DEFAULT_LOOKBACK = 1_000_000n;
 
+/** What the explicit "Sync from Tempo" reaches back to — roughly a month. */
+export const DEEP_LOOKBACK = 5_000_000n;
+
 function lookbackWindow(head: bigint, lookback?: bigint): bigint {
   const window = lookback ?? DEFAULT_LOOKBACK;
   return head > window ? head - window : 0n;

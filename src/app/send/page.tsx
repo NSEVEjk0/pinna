@@ -18,14 +18,14 @@ export default function SendPage() {
   const { address, isConnected, contacts, network, token, saveContact, recordSent } = usePinna();
   const { ensure, onRightChain, pending: switching, error: chainError, network: activeNet } =
     useActiveNetwork();
-  const { consume } = useDraftContact("send");
+  const consume = useDraftContact("send");
   const [rows, setRows] = useState<PayableRow[]>([newRow(), newRow()]);
   const [stage, setStage] = useState<Stage>("edit");
   const [txHash, setTxHash] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
-  const { sendTransactionSync } = useSendTransactionSync();
+  const { sendTransactionSyncAsync } = useSendTransactionSync();
 
   // A contact chosen on the Contacts screen arrives as the first row.
   useEffect(() => {
@@ -54,11 +54,17 @@ export default function SendPage() {
     setError(null);
     setSending(true);
     try {
-      const hash = sendTransactionSync({
+      // The async form waits for the wallet and hands back the hash; the
+      // fire-and-forget one returns nothing and hides a rejected signature.
+      const hash = await sendTransactionSyncAsync({
         calls: batch.calls,
         feeToken: token.address,
       } as never);
       const resolved = typeof hash === "string" ? hash : "";
+      if (!resolved) {
+        setError("The wallet did not return a transaction hash. Nothing was recorded.");
+        return;
+      }
       setTxHash(resolved);
       setStage("sent");
       ready.forEach((row) => {

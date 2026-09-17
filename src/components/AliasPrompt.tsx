@@ -2,83 +2,115 @@
 
 import { useEffect, useState } from "react";
 import { useConnection } from "wagmi";
-import { hasAlias, loadAlias, requestGreeting, saveAlias } from "@/lib/profile";
+import { loadAlias, requestGreeting, saveAlias } from "@/lib/profile";
+
+const DISMISS_KEY = "pinna:profile:aliasDismissed";
+
+function wasDismissed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberDismissed(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DISMISS_KEY, "1");
+  } catch {
+    // storage blocked — the prompt simply shows again next time
+  }
+}
 
 /**
- * First run asks what to call you. The name is yours alone — it is attached to
- * the requests you send so the person paying knows who is asking, and it can
- * be changed at any time (including while writing a single request).
+ * First run asks what to call you, as a strip at the top of the page rather
+ * than a sheet over it: the app stays usable while you decide. Once answered
+ * or dismissed it stays out of the way.
  */
 export function AliasPrompt() {
   const { address, isConnected } = useConnection();
-  const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [name, setName] = useState("");
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!isConnected || !address) {
-      setOpen(false);
-      setReady(false);
+      setVisible(false);
       return;
     }
     const existing = loadAlias();
     if (existing) {
       setName(existing);
-      setOpen(false);
-    } else {
-      setOpen(true);
+      setVisible(false);
+      return;
     }
-    setReady(true);
+    setVisible(!wasDismissed());
   }, [isConnected, address]);
 
-  if (!open || !ready) return null;
+  if (!visible) return null;
 
   const preview = requestGreeting(name || "you", "the shared cost");
 
   return (
-    <div className="sheet-backdrop">
-      <div className="sheet" role="dialog" aria-label="Your name" style={{ maxWidth: 520 }}>
-        <p className="eyebrow" style={{ margin: "0 0 10px" }}>
-          Before you start
-        </p>
-        <h2 className="display" style={{ fontSize: "1.7rem", margin: "0 0 10px" }}>
-          What should people call you?
-        </h2>
-        <p className="muted" style={{ margin: "0 0 22px", fontSize: "0.95rem" }}>
-          This name goes on the requests you send, so the person paying knows who is asking.
-          It stays in this browser.
-        </p>
-
-        <input
-          className="field"
-          autoFocus
-          value={name}
-          placeholder="Jake"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && name.trim()) {
-              saveAlias(name);
-              setOpen(false);
-            }
-          }}
-        />
-
-        <p className="faint" style={{ fontSize: "0.85rem", marginTop: 14 }}>
-          Preview: “{preview}”
-        </p>
-
-        <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap" }}>
+    <div
+      style={{
+        borderBottom: "1px solid var(--hairline)",
+        background: "rgba(122,154,126,0.07)",
+      }}
+    >
+      <div
+        className="shell"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 18,
+          padding: "14px 0",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+          <p className="eyebrow" style={{ margin: "0 0 4px" }}>
+            Your name on requests
+          </p>
+          <p className="muted" style={{ margin: 0, fontSize: "0.88rem" }}>
+            So the person paying knows who is asking — “{preview}”
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            className="field"
+            value={name}
+            placeholder="Jake"
+            aria-label="Your name"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && name.trim()) {
+                saveAlias(name);
+                setVisible(false);
+              }
+            }}
+            style={{ width: 180 }}
+          />
           <button
             className="button"
             disabled={!name.trim()}
             onClick={() => {
               saveAlias(name);
-              setOpen(false);
+              setVisible(false);
             }}
           >
-            Save my name
+            Save
           </button>
-          <button className="button button-quiet" onClick={() => setOpen(false)}>
+          <button
+            className="nav-link"
+            style={{ background: "transparent", border: 0, cursor: "pointer" }}
+            onClick={() => {
+              rememberDismissed();
+              setVisible(false);
+            }}
+          >
             Later
           </button>
         </div>
@@ -87,18 +119,15 @@ export function AliasPrompt() {
   );
 }
 
-/** True when an alias exists — used to nudge before sending a request. */
+/** The alias for the connected wallet, with a setter that persists it. */
 export function useAlias() {
-  const [alias, setAlias] = useState("");
+  const [alias, setAliasState] = useState("");
   useEffect(() => {
-    setAlias(loadAlias());
+    setAliasState(loadAlias());
   }, []);
   return {
     alias,
-    setAlias: (next: string) => {
-      setAlias(saveAlias(next));
-    },
+    setAlias: (next: string) => setAliasState(saveAlias(next)),
     missing: alias.length === 0,
-    exists: hasAlias(),
   };
 }

@@ -55,7 +55,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
   const payload = useMemo(() => decodePayLink(encoded), [encoded]);
   const { network, ensure, onRightChain, pending: switching, error: chainError } = useActiveNetwork();
   const { address, isConnected } = useConnection();
-  const { sendTransactionSync } = useSendTransactionSync();
+  const { sendTransactionSyncAsync } = useSendTransactionSync();
   const [settled, setSettled] = useState<Settled | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -124,17 +124,21 @@ export default function PayPage({ params }: { params: { id: string } }) {
     );
   }, [payload, params.id, tokenAddress, network]);
 
-  function pay() {
+  async function pay() {
     if (!batch) return;
     setError(null);
     setSending(true);
     try {
-      const result = sendTransactionSync({
+      const hash = await sendTransactionSyncAsync({
         calls: batch.calls,
         feeToken: tokenAddress,
       } as never);
-      const hash = typeof result === "string" ? result : "";
-      const entry = { txHash: hash, at: new Date().toISOString(), from: address ?? undefined };
+      const resolved = typeof hash === "string" ? hash : "";
+      if (!resolved) {
+        setError("The wallet did not return a transaction hash, so nothing was recorded.");
+        return;
+      }
+      const entry = { txHash: resolved, at: new Date().toISOString(), from: address ?? undefined };
       writeLocalSettlement(params.id, entry);
       setSettled(entry);
     } catch (err) {
