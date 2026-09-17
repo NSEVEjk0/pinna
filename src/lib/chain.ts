@@ -78,9 +78,15 @@ async function getLogsChunked(
   return out;
 }
 
-/** How far back a read should look. */
+/**
+ * How far back a read should look. Tempo produces blocks quickly, so a window
+ * is measured in blocks rather than days: one million blocks is roughly a
+ * week. Callers that run on their own pass their own window.
+ */
+export const DEFAULT_LOOKBACK = 1_000_000n;
+
 function lookbackWindow(head: bigint, lookback?: bigint): bigint {
-  const window = lookback ?? 300_000n;
+  const window = lookback ?? DEFAULT_LOOKBACK;
   return head > window ? head - window : 0n;
 }
 
