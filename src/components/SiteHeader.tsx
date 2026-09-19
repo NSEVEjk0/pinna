@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useConnection, useConnect, useDisconnect } from "wagmi";
 import { Wordmark } from "./Fern";
 import { NetworkSwitch } from "./NetworkSwitch";
+import { TokenSwitch } from "./TokenSwitch";
 import { shortAddress } from "@/lib/money";
 import { usePinna } from "@/lib/usePinna";
 import { unreadCount } from "@/lib/events";
@@ -87,6 +88,8 @@ export function SiteHeader() {
   const links = [
     { href: "/", label: "Home" },
     { href: "/contacts", label: "Contacts" },
+    { href: "/automation", label: "Automation" },
+    { href: "/sync", label: "Sync" },
     { href: "/history", label: "History" },
   ];
 
@@ -136,6 +139,7 @@ export function SiteHeader() {
             ) : null}
           </Link>
           <NetworkSwitch />
+          <TokenSwitch />
           <ConnectButton />
         </nav>
       </div>

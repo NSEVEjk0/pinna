@@ -16,7 +16,14 @@ export interface PayLinkPayload {
   message?: string;
   token: string;
   network: string;
-}function base64UrlEncode(input: string): string {
+  /** Who the request was addressed to, so the page can say whose it is. */
+  partyName?: string;
+  partyAddress?: `0x${string}`;
+  /** ISO date the link closes, or null/absent to stay open. */
+  expiresAt?: string | null;
+}
+
+function base64UrlEncode(input: string): string {
   const bytes = new TextEncoder().encode(input);
   let binary = "";
   bytes.forEach((b) => {

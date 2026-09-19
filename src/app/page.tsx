@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Fern } from "@/components/Fern";
 import { EXAMPLE_CARDS, TEMPO_COPY } from "@/lib/brand";
+import { FaqSection } from "@/components/Faq";
 
 export default function HomePage() {
   return (
@@ -30,7 +31,8 @@ export default function HomePage() {
             </h1>
             <p className="muted" style={{ fontSize: "1.1rem", maxWidth: "52ch", margin: "0 0 34px" }}>
               Pinna keeps the list of who you pay, writes the reason on every transfer, and
-              settles the whole list in a single signature. The money lives on Tempo.
+              settles the whole list in a single signature — with a request flow, reminders and
+              repeats for everything that is not a one-off. The money lives on Tempo.
             </p>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Link className="button" href="/send">
@@ -66,12 +68,21 @@ export default function HomePage() {
           </div>
           <div>
             <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-              What Tempo does inside Pinna
+              What Tempo is trying to do
             </p>
             <p className="muted" style={{ margin: 0, maxWidth: "46ch" }}>
-              {TEMPO_COPY.inPinna}
+              {TEMPO_COPY.goal}
             </p>
           </div>
+        </div>
+        <hr className="rule" />
+        <div style={{ padding: "0 0 40px" }}>
+          <p className="eyebrow" style={{ margin: "0 0 14px" }}>
+            What Tempo does inside Pinna
+          </p>
+          <p className="muted" style={{ margin: 0, maxWidth: "62ch" }}>
+            {TEMPO_COPY.inPinna}
+          </p>
         </div>
         <hr className="rule" />
       </section>
@@ -148,6 +159,8 @@ export default function HomePage() {
           </Link>
         </div>
       </section>
+
+      <FaqSection />
 
       <style>{`
         @media (min-width: 900px) {

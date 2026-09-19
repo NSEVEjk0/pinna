@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useConnection, useSendTransactionSync } from "wagmi";
-import { decodePayLink, paymentConfirmation } from "@/lib/paylink";
+import { decodePayLink, encodePayLink, paymentConfirmation } from "@/lib/paylink";
 import { buildBatch } from "@/lib/batch";
 import { explorerTxUrl, explorerForRecord } from "@/lib/tempo";
 import { shortAddress } from "@/lib/money";
 import { useActiveNetwork } from "@/lib/useActiveNetwork";
+import { usePinna } from "@/lib/usePinna";
 import { downloadReceipt } from "@/lib/receipt";
 import { findTransferByReference } from "@/lib/chain";
+import { describeExpiry, isExpired } from "@/lib/expiry";
 
 /**
  * The public pay page. The whole request travels in the link, so this page
@@ -54,6 +56,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
   const encoded = search.get("d") ?? "";
   const payload = useMemo(() => decodePayLink(encoded), [encoded]);
   const { network, ensure, onRightChain, pending: switching, error: chainError } = useActiveNetwork();
+  const { token: preferredToken, tokenOptions } = usePinna();
   const { address, isConnected } = useConnection();
   const { sendTransactionSyncAsync } = useSendTransactionSync();
   const [settled, setSettled] = useState<Settled | null>(null);
@@ -61,8 +64,14 @@ export default function PayPage({ params }: { params: { id: string } }) {
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [checkingChain, setCheckingChain] = useState(true);
+  const [checkNote, setCheckNote] = useState<string | null>(null);
 
-  const tokenAddress = (process.env.NEXT_PUBLIC_TIP20 as `0x${string}`) || network.defaultToken.address;
+  // The link names the token it asked for; fall back to the preferred one when
+  // the link predates that, so an older link still pays.
+  const linkToken = payload
+    ? tokenOptions.find((t) => t.symbol === payload.token) ?? preferredToken
+    : preferredToken;
+  const tokenAddress = linkToken.address;
   const host = payload?.hostName?.trim() || (payload ? shortAddress(payload.to) : "");
 
   // Fast path: this browser already paid it.
@@ -71,38 +80,45 @@ export default function PayPage({ params }: { params: { id: string } }) {
     if (local) setSettled(local);
   }, [params.id]);
 
-  // Real answer: has this reference been paid on Tempo?
-  useEffect(() => {
-    if (!payload) {
-      setCheckingChain(false);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
+  /** Ask Tempo whether this reference has been paid. */
+  const checkTempo = useCallback(
+    async (announce = false) => {
+      if (!payload) return;
+      setCheckingChain(true);
+      if (announce) setCheckNote(null);
       try {
-        const found = await findTransferByReference(
-          network,
-          tokenAddress,
-          payload.to,
-          params.id
-        );
-        if (!cancelled && found) {
+        const found = await findTransferByReference(network, tokenAddress, payload.to, params.id);
+        if (found) {
           setSettled({
             txHash: found.txHash,
             at: found.timestamp ? new Date(found.timestamp * 1000).toISOString() : undefined,
             from: found.from,
           });
+          if (announce) setCheckNote("Tempo confirms this reference has been paid.");
+        } else if (announce) {
+          setCheckNote("Tempo has no transfer carrying this reference yet.");
         }
-      } catch {
-        // the chain could not be read — fall back to the local memory
+      } catch (err) {
+        if (announce) {
+          setCheckNote(
+            err instanceof Error ? `Could not read Tempo: ${err.message}` : "Could not read Tempo."
+          );
+        }
       } finally {
-        if (!cancelled) setCheckingChain(false);
+        setCheckingChain(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [payload, network, tokenAddress, params.id]);
+    },
+    [payload, network, tokenAddress, params.id]
+  );
+
+  // Run the check as soon as the page knows what it is looking for.
+  useEffect(() => {
+    if (!payload) {
+      setCheckingChain(false);
+      return;
+    }
+    void checkTempo(false);
+  }, [payload, checkTempo]);
 
   const batch = useMemo(() => {
     if (!payload) return null;
@@ -118,7 +134,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
       ],
       {
         token: tokenAddress,
-        decimals: network.defaultToken.decimals,
+        decimals: linkToken.decimals,
         referenceFor: () => params.id,
       }
     );
@@ -163,6 +179,12 @@ export default function PayPage({ params }: { params: { id: string } }) {
     );
   }
 
+  const expired = isExpired(payload.expiresAt);
+  const agentUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/pay/${params.id}?d=${encodePayLink(payload)}`
+      : "";
+
   const explorer = settled
     ? explorerForRecord({}, network, settled.txHash)
     : "";
@@ -198,11 +220,47 @@ export default function PayPage({ params }: { params: { id: string } }) {
         </div>
       ) : null}
 
+      {agentUrl ? (
+        <div className="panel" style={{ padding: 18, marginBottom: 24 }}>
+          <p className="eyebrow" style={{ margin: "0 0 8px" }}>
+            Agents can pay this too
+          </p>
+          <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.9rem" }}>
+            The same request answers a machine: ask without paying and it replies 402 with what is
+            owed, then check the transfer hash and return a receipt.
+          </p>
+          <p className="mono" style={{ margin: "0 0 10px", fontSize: "0.78rem", wordBreak: "break-all" }}>
+            GET {agentUrl}
+          </p>
+          <button className="pdf-again" onClick={() => navigator.clipboard?.writeText(agentUrl)}>
+            Copy endpoint
+          </button>
+        </div>
+      ) : null}
+
       <div style={{ borderTop: "1px solid var(--hairline)" }}>
         <Row label="Pay to" value={payload.to} mono />
         <Row label="On" value={payload.network} />
         <Row label="Reference" value={payload.id} mono />
+        <Row label="Link" value={describeExpiry(payload.expiresAt)} />
+        {payload.partyAddress ? (
+          <Row
+            label="Requested from"
+            value={payload.partyName ? `${payload.partyName} · ${payload.partyAddress}` : payload.partyAddress}
+          />
+        ) : null}
       </div>
+
+      {payload.partyAddress &&
+      address &&
+      address.toLowerCase() !== payload.partyAddress.toLowerCase() &&
+      !settled ? (
+        <p className="faint" style={{ marginTop: 16, fontSize: "0.86rem" }}>
+          This request was addressed to {payload.partyName || "someone else"}, and you are paying
+          from a different wallet. That is fine — the transfer carries the reference{" "}
+          {payload.id}, and that reference is what marks the request paid.
+        </p>
+      ) : null}
 
       {settled ? (
         <div className="panel" style={{ padding: 26, marginTop: 28 }}>
@@ -269,12 +327,19 @@ export default function PayPage({ params }: { params: { id: string } }) {
                   tokenSymbol: payload.token,
                   network: payload.network,
                   from: address ?? settled.from ?? "",
-                  decimals: network.defaultToken.decimals,
+                  decimals: linkToken.decimals,
                   note: "This transfer carried the request reference as its memo.",
                 })
               }
             >
               Download PDF receipt
+            </button>
+            <button
+              className="button button-quiet"
+              onClick={() => checkTempo(true)}
+              disabled={checkingChain}
+            >
+              {checkingChain ? "Reading Tempo…" : "Check Tempo again"}
             </button>
             <button
               className="pdf-again"
@@ -287,6 +352,12 @@ export default function PayPage({ params }: { params: { id: string } }) {
               {copied ? "Copied" : "Copy confirmation"}
             </button>
           </div>
+
+          {checkNote ? (
+            <p className="muted" style={{ marginTop: 16, fontSize: "0.86rem" }}>
+              {checkNote}
+            </p>
+          ) : null}
 
           <div className="panel" style={{ padding: 18, marginTop: 22, background: "rgba(244,241,234,0.02)" }}>
             <p className="eyebrow" style={{ margin: "0 0 10px" }}>
@@ -310,7 +381,21 @@ export default function PayPage({ params }: { params: { id: string } }) {
               {chainError ? <p style={{ color: "#c98b7f", marginTop: 10 }}>{chainError}</p> : null}
             </div>
           ) : null}
-          <button className="button" onClick={pay} disabled={!isConnected || sending || !onRightChain}>
+          {expired ? (
+            <div className="network-warning" style={{ marginBottom: 18 }}>
+              <span aria-hidden="true">⚠</span>
+              <span>
+                This link closed on {describeExpiry(payload.expiresAt).replace("Expired ", "")} and
+                no longer accepts payment. Ask {host} for a new one, or press Check Tempo if you
+                paid before it closed.
+              </span>
+            </div>
+          ) : null}
+          <button
+            className="button"
+            onClick={pay}
+            disabled={!isConnected || sending || !onRightChain || expired}
+          >
             {sending ? "Waiting for your wallet…" : `Pay ${payload.amount} ${payload.token} on Tempo`}
           </button>
           {!isConnected ? (
@@ -321,9 +406,22 @@ export default function PayPage({ params }: { params: { id: string } }) {
           {error ? <p style={{ color: "#c98b7f", marginTop: 12 }}>{error}</p> : null}
           <p className="faint" style={{ marginTop: 14, fontSize: "0.82rem" }}>
             One signature. The fee is paid in the same stablecoin, and the transfer carries the
-            reference {payload.id}.{" "}
-            {checkingChain ? "Checking Tempo for an earlier payment…" : ""}
+            reference {payload.id}.
           </p>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
+            <button
+              className="button button-quiet"
+              onClick={() => checkTempo(true)}
+              disabled={checkingChain}
+            >
+              {checkingChain ? "Reading Tempo…" : "Check Tempo"}
+            </button>
+            {checkNote ? (
+              <span className="muted" style={{ fontSize: "0.86rem" }}>
+                {checkNote}
+              </span>
+            ) : null}
+          </div>
         </div>
       )}
     </div>

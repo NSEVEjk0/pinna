@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { isPositiveAmount, isValidAddress, type PayableRow } from "@/lib/money";
 import type { Contact } from "@/lib/storage";
 import { ContactPicker } from "./ContactPicker";
@@ -32,9 +32,6 @@ export function RowsEditor({
   reasonPlaceholder?: string;
 }) {
   const contactOptions = useMemo(() => contacts.map((c) => c.name), [contacts]);
-  const [pickerFor, setPickerFor] = useState<string | null>(null);
-
-  const pickerRow = rows.find((r) => r.id === pickerFor) ?? null;
 
   return (
     <div>
@@ -70,14 +67,10 @@ export function RowsEditor({
                   <span className="faint" style={{ fontSize: "0.7rem", letterSpacing: "0.12em", textTransform: "uppercase" }}>
                     Name
                   </span>
-                  <button
-                    type="button"
-                    className="pick-button"
-                    onClick={() => setPickerFor(row.id)}
-                    title="Pick from contacts"
-                  >
-                    Contacts
-                  </button>
+                  <ContactPicker
+                    contacts={contacts}
+                    onPick={(contact) => onChange(row.id, { name: contact.name, address: contact.address })}
+                  />
                 </div>
                 <input
                   className="field"
@@ -196,13 +189,6 @@ export function RowsEditor({
         {rows.length} row{rows.length === 1 ? "" : "s"} · each row is its own transfer with its own
         reference
       </p>
-
-      {pickerRow ? (
-        <ContactPicker
-          contacts={contacts}
-          onPick={(contact) => onChange(pickerRow.id, { name: contact.name, address: contact.address })}
-        />
-      ) : null}
     </div>
   );
 }

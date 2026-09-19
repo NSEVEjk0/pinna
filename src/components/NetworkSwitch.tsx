@@ -86,6 +86,20 @@ export function NetworkSwitch() {
               {error}
             </p>
           ) : null}
+          {!isMainnet ? (
+            <p
+              style={{
+                margin: 0,
+                padding: "10px 12px 12px",
+                fontSize: "0.78rem",
+                color: "#d8a79b",
+                borderTop: "1px solid var(--hairline)",
+              }}
+            >
+              ⚠ The testnet version is not very reliable. Please use mainnet for anything that
+              matters.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

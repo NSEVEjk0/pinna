@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConnection } from "wagmi";
-import { activeToken } from "./tempo";
+import { useTokenChoice } from "./useTokenChoice";
 import { useActiveNetwork } from "./useActiveNetwork";
 import {
   addSent,
@@ -22,6 +22,12 @@ import { loadLedger, loadLastSync, saveLastSync, saveLedger } from "./storage";
 import { buildLedger, type LedgerEntry } from "./ledger";
 import { readWalletTransfers, DEEP_LOOKBACK } from "./chain";
 import { markPaid, type PaymentRequest } from "./requests";
+import {
+  loadRules,
+  removeRule,
+  upsertRule,
+} from "./storage";
+import type { AutomationRule } from "./automation";
 
 /**
  * The wallet is the identity: contacts, lists, requests and notifications are
@@ -34,7 +40,7 @@ import { markPaid, type PaymentRequest } from "./requests";
 export function usePinna() {
   const { address, isConnected } = useConnection();
   const { network } = useActiveNetwork();
-  const token = useMemo(() => activeToken(network, undefined), [network]);
+  const { token, options: tokenOptions, choose: chooseToken } = useTokenChoice(network);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [sent, setSent] = useState<SentList[]>([]);
@@ -118,11 +124,14 @@ export function usePinna() {
         }
 
         // Tell the user about what the chain showed that we had not seen.
+        // The very first sync is silent — it would otherwise announce a whole
+        // history at once. Everything after that piles up as a notification.
         const previous = loadLedger(address);
+        const firstSync = previous.length === 0;
         const known = new Set(previous.map((e) => e.id));
         const fresh = entries.filter((e) => !known.has(e.id));
-        if (fresh.length > 0 && !options.quiet) {
-          for (const entry of fresh.slice(0, 5)) {
+        if (fresh.length > 0 && !firstSync) {
+          for (const entry of fresh.slice(0, 20)) {
             pushEvent(address, {
               kind: entry.direction === "sent" ? "list_sent" : "request_paid",
               title:
@@ -156,7 +165,7 @@ export function usePinna() {
   );
 
   const saveContact = useCallback(
-    (contact: { address: `0x${string}`; name: string }, countUse = false) => {
+    (contact: { address: `0x${string}`; name: string; avatar?: string }, countUse = false) => {
       if (!address) return;
       setContacts(sortContacts(upsertContact(address, contact, { countUse })));
     },
@@ -218,6 +227,33 @@ export function usePinna() {
     setEvents(markAllRead(address));
   }, [address]);
 
+  /** Rules for scheduled payments. */
+  const [rules, setRules] = useState<AutomationRule[]>([]);
+
+  useEffect(() => {
+    if (!address) {
+      setRules([]);
+      return;
+    }
+    setRules(loadRules(address));
+  }, [address]);
+
+  const saveRule = useCallback(
+    (rule: AutomationRule) => {
+      if (!address) return;
+      setRules(upsertRule(address, rule));
+    },
+    [address]
+  );
+
+  const deleteRule = useCallback(
+    (id: string) => {
+      if (!address) return;
+      setRules(removeRule(address, id));
+    },
+    [address]
+  );
+
   const saveAlias = useCallback((next: string) => {
     setAliasState(persistAlias(next));
   }, []);
@@ -227,12 +263,17 @@ export function usePinna() {
     isConnected,
     network,
     token,
+    tokenOptions,
+    chooseToken,
     alias,
     saveAlias,
     contacts,
     sent,
     requests,
     events,
+    rules,
+    saveRule,
+    deleteRule,
     ledger,
     lastSync,
     syncing,

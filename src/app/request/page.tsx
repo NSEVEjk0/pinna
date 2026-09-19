@@ -10,6 +10,7 @@ import { draftMessage, payLinkUrl, reminderMessage } from "@/lib/paylink";
 import { downloadReceipt } from "@/lib/receipt";
 import { requestGreeting } from "@/lib/profile";
 import { useDraftContact } from "@/lib/useDraftContact";
+import { EXPIRY_OPTIONS, resolveExpiry, type ExpiryChoice } from "@/lib/expiry";
 import type { PaymentRequest } from "@/lib/requests";
 
 type Stage = "edit" | "confirm" | "created";
@@ -41,6 +42,8 @@ export default function RequestPage() {
   const [created, setCreated] = useState<PaymentRequest[]>([]);
   const [origin, setOrigin] = useState("");
   const [fromName, setFromName] = useState(alias);
+  const [expiryChoice, setExpiryChoice] = useState<ExpiryChoice>("never");
+  const [expiryDate, setExpiryDate] = useState("");
 
   const ready = useMemo(() => payableRows(rows), [rows]);
   const total = useMemo(() => (ready.length ? listTotal(ready) : 0n), [ready]);
@@ -80,6 +83,7 @@ export default function RequestPage() {
   function create() {
     if (!address) return;
     const at = new Date().toISOString();
+    const expiresAt = resolveExpiry(expiryChoice, expiryDate, new Date(at));
     const made: PaymentRequest[] = ready.map((row) => {
       const choice = extrasFor(row.id);
       const request: PaymentRequest = {
@@ -90,6 +94,7 @@ export default function RequestPage() {
         amount: row.amount,
         reason: row.reason ?? "",
         hostAlias: fromName.trim() || alias,
+        expiresAt,
         hasLink: choice.link,
         hasPdf: choice.pdf,
         status: "waiting",
@@ -234,6 +239,40 @@ export default function RequestPage() {
             })}
           </div>
 
+          <div style={{ marginTop: 30, maxWidth: 420 }}>
+            <span
+              className="faint"
+              style={{ fontSize: "0.72rem", letterSpacing: "0.14em", textTransform: "uppercase" }}
+            >
+              When should the links close?
+            </span>
+            <select
+              className="field"
+              value={expiryChoice}
+              onChange={(e) => setExpiryChoice(e.target.value as ExpiryChoice)}
+            >
+              {EXPIRY_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key} style={{ color: "#111" }}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {expiryChoice === "custom" ? (
+              <input
+                className="field mono"
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                style={{ marginTop: 10 }}
+              />
+            ) : null}
+            <p className="faint" style={{ fontSize: "0.8rem", marginTop: 8 }}>
+              {expiryChoice === "never"
+                ? "The link stays open until it is paid."
+                : "After that date the link stops offering payment. A transfer that still carries the reference is recognised either way."}
+            </p>
+          </div>
+
           <p style={{ margin: "24px 0 0", display: "flex", justifyContent: "space-between" }}>
             <span className="eyebrow">Total requested</span>
             <span className="mono" style={{ fontSize: "1.5rem" }}>
@@ -268,6 +307,9 @@ export default function RequestPage() {
               id: request.id,
               to: request.hostAddress,
               hostName: fromName || alias,
+              partyName: request.partyName,
+              partyAddress: request.partyAddress,
+              expiresAt: request.expiresAt ?? null,
               amount: request.amount,
               reason: request.reason,
               message: request.message,

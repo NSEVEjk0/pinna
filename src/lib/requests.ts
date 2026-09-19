@@ -34,6 +34,8 @@ export interface PaymentRequest {
   settledBy?: "detected" | "marked";
   /** The name the payer sees on the link, as written when it was created. */
   hostAlias?: string;
+  /** When the link stops accepting payment; null or absent means never. */
+  expiresAt?: string | null;
 }
 
 export const REQUEST_STATUSES: RequestStatus[] = ["waiting", "paid", "cancelled"];

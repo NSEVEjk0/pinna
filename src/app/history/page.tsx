@@ -14,6 +14,7 @@ import type { LedgerEntry } from "@/lib/ledger";
 import type { IncomingTransfer } from "@/lib/requests";
 import { readIncomingTransfers } from "@/lib/chain";
 import { whenText, hashLabel } from "@/lib/format";
+import { Avatar } from "@/components/Avatar";
 
 const TABS = [
   "Money sent / paid by you",
@@ -32,6 +33,7 @@ export default function HistoryPage() {
     token,
     sent,
     requests,
+    contacts,
     ledger,
     lastSync,
     syncing,
@@ -40,6 +42,9 @@ export default function HistoryPage() {
     saveRequest,
     notify,
   } = usePinna();
+
+  const avatarFor = (addr: string) =>
+    contacts.find((c) => c.address.toLowerCase() === addr.toLowerCase())?.avatar ?? null;
 
   const [tab, setTab] = useState<Tab>(TABS[0]);
   const [openRow, setOpenRow] = useState<string | null>(null);
@@ -290,6 +295,7 @@ export default function HistoryPage() {
                 key={entry.id}
                 entry={entry}
                 network={network}
+                avatar={avatarFor(entry.address)}
                 open={openRow === entry.id}
                 onToggle={() => setOpenRow(openRow === entry.id ? null : entry.id)}
                 onPdf={() => receiptForEntry(entry)}
@@ -311,6 +317,7 @@ export default function HistoryPage() {
                 key={entry.id}
                 entry={entry}
                 network={network}
+                avatar={avatarFor(entry.address)}
                 open={openRow === entry.id}
                 onToggle={() => setOpenRow(openRow === entry.id ? null : entry.id)}
                 onPdf={() => receiptForEntry(entry)}
@@ -331,6 +338,7 @@ export default function HistoryPage() {
                   key={request.id}
                   request={request}
                   network={network}
+                  avatar={avatarFor(request.partyAddress)}
                   open={openRow === request.id}
                   onToggle={() => setOpenRow(openRow === request.id ? null : request.id)}
                   onPdf={() => receiptForRequest(request)}
@@ -376,6 +384,7 @@ export default function HistoryPage() {
                     key={request.id}
                     request={request}
                     network={network}
+                    avatar={avatarFor(request.partyAddress)}
                     open={openRow === request.id}
                     onToggle={() => setOpenRow(openRow === request.id ? null : request.id)}
                     onPdf={() => receiptForRequest(request)}
@@ -425,12 +434,14 @@ export default function HistoryPage() {
 function LedgerRow({
   entry,
   network,
+  avatar,
   open,
   onToggle,
   onPdf,
 }: {
   entry: LedgerEntry;
   network: TempoNetwork;
+  avatar?: string | null;
   open: boolean;
   onToggle: () => void;
   onPdf: () => void;
@@ -447,19 +458,26 @@ function LedgerRow({
           }}
           className="row-grid"
         >
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <Avatar name={entry.name} address={entry.address} src={avatar} size={34} />
+            <div style={{ minWidth: 0 }}>
             <p style={{ margin: 0 }}>
               {entry.name || entry.address}
               {entry.reason ? (
                 <span className="faint" style={{ marginLeft: 10, fontSize: "0.82rem" }}>
                   {entry.reason}
                 </span>
-              ) : null}
+              ) : (
+                <span className="faint" style={{ marginLeft: 10, fontSize: "0.82rem" }}>
+                  no reason recorded
+                </span>
+              )}
             </p>
             <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
               {whenText(entry.at)}
               {entry.reference ? ` · ref ${entry.reference}` : ""}
             </p>
+            </div>
           </div>
           <p className="mono" style={{ margin: 0 }}>
             {entry.amount} {entry.tokenSymbol}
@@ -539,6 +557,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 function RequestRow({
   request,
   network,
+  avatar,
   open,
   onToggle,
   onPdf,
@@ -551,6 +570,7 @@ function RequestRow({
 }: {
   request: PaymentRequest;
   network: TempoNetwork;
+  avatar?: string | null;
   open: boolean;
   onToggle: () => void;
   onPdf: () => void;
@@ -574,7 +594,9 @@ function RequestRow({
           }}
           className="row-grid"
         >
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <Avatar name={request.partyName} address={request.partyAddress} src={avatar} size={34} />
+            <div style={{ minWidth: 0 }}>
             <p style={{ margin: 0 }}>
               {request.partyName || request.partyAddress}
               <span className="faint" style={{ marginLeft: 10, fontSize: "0.82rem" }}>
@@ -584,6 +606,7 @@ function RequestRow({
             <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.74rem" }}>
               {whenText(request.createdAt)} · ref {request.id}
             </p>
+            </div>
           </div>
           <p className="mono" style={{ margin: 0 }}>
             {request.amount}
@@ -714,6 +737,8 @@ function RequestRow({
                   id: request.id,
                   to: request.hostAddress,
                   hostName: request.hostAlias ?? hostAlias ?? "",
+                  partyName: request.partyName,
+                  partyAddress: request.partyAddress,
                   amount: request.amount,
                   reason: request.reason,
                   token: "USD",

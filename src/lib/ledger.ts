@@ -1,4 +1,4 @@
-import { decodeMemo } from "./memo";
+import { decodeMemo, decodeNote } from "./memo";
 import { formatAmount } from "./money";
 import type { IncomingTransfer, PaymentRequest } from "./requests";
 import type { SentRowSummary } from "./storage";
@@ -74,19 +74,21 @@ export function buildLedger(input: BuildLedgerInput): LedgerEntry[] {
     const outgoing = transfer.from.toLowerCase() === me;
     const counterparty = outgoing ? transfer.to : transfer.from;
     const reference = decodeMemo(transfer.memo);
+    // A memo that is not one of our references is still worth showing — it is
+    // the note the payer wrote.
+    const note = reference ? null : decodeNote(transfer.memo);
 
     const request = reference ? requestById.get(reference) : undefined;
     const local = reasonByHash.get(`${transfer.txHash.toLowerCase()}|${counterparty.toLowerCase()}`);
 
     // The name shown is always the other side's: for money in, the person who
     // paid; for money out, the person paid.
-    const name =
-      local?.name ||
-      request?.partyName ||
-      input.nameFor(counterparty) ||
-      "";
+    const name = local?.name || request?.partyName || input.nameFor(counterparty) || "";
 
-    const reason = request?.reason || local?.reason || "";
+    // The reason, in order of trust: what the local record says this payment
+    // was for, what the request it pays says, then any note written into the
+    // memo itself.
+    const reason = local?.reason || request?.reason || note || "";
 
     return {
       id: `${transfer.txHash}-${index}`,

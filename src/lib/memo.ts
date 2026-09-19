@@ -52,3 +52,27 @@ export function isPinnaMemo(memo: string | undefined | null): boolean {
 export function memoForRow(row: { reason?: string; reference?: string }): `0x${string}` {
   return encodeMemo(row.reference || "row");
 }
+
+/**
+ * A plain note written straight into the 32-byte memo, without the Pinna
+ * prefix — used by scheduled payments, where the memo is a label for the
+ * transfer rather than a reference to match against.
+ */
+export function encodeNote(text: string): `0x${string}` {
+  const clean = String(text ?? "").trim().slice(0, MEMO_BYTES - 1);
+  return pad(stringToHex(clean), { size: MEMO_BYTES, dir: "right" });
+}
+
+/**
+ * Read a memo back as plain text: the reference if it carries Pinna's prefix,
+ * otherwise the note as written, otherwise null.
+ */
+export function decodeNote(memo: string | undefined | null): string | null {
+  if (!memo || typeof memo !== "string") return null;
+  try {
+    const text = hexToString(memo as `0x${string}`).replace(/\0+$/, "");
+    return text.length > 0 ? text : null;
+  } catch {
+    return null;
+  }
+}

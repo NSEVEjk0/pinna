@@ -5,18 +5,23 @@
 
 export const BRAND = {
   name: "Pinna",
-  oneLiner: "Names and reminders. Dollars move on Tempo.",
+  /**
+   * One phrase for everything Pinna does: the address book, paying a whole
+   * list in one signature, asking to be paid, the reminders, the repeats.
+   */
+  oneLiner: "Pay a list, request money, and keep every receipt — on Tempo.",
   builtBy: "Built by CK",
   xUrl: "https://x.com/CRYPTFRANI",
   xHandle: "@CRYPTFRANI",
   footer:
-    "Tempo is a payments-first blockchain where the money is the gas — no separate token to hold. Pinna uses Tempo batches to pay a whole list in one signature, and memos to write a reason onto every transfer, so a payment is also the record of what it was for.",
+    "Tempo is a payments-first blockchain where dollars are the money and the fee at once — no separate token to hold. Pinna uses Tempo batches to pay a whole list in one signature, and memos to write a reason onto every transfer, so the payment is also the record of what it was for.",
 } as const;
 
 export const TEMPO_COPY = {
-  what: "Tempo is a payments-first Layer 1 blockchain incubated by Stripe and Paradigm. Dollars live on it, transfers settle in seconds, and fees are paid in the same stablecoin you send.",
+  what: "Tempo is a payments-first Layer 1 blockchain incubated by Stripe and Paradigm. Dollars live on it, transfers settle in seconds, and the fee is paid in the same stablecoin you are sending.",
+  goal: "It is built on one idea: moving money should feel like sending a message. Stablecoins are the money and the fee, so there is no gas token to buy first, no chain to think about for the person receiving it, and nothing to reconcile by hand afterwards. Tempo is betting that payments deserve their own chain rather than a corner of a general-purpose one.",
   inPinna:
-    "In Pinna, Tempo is the rail. A whole list — several people, several payments — leaves your wallet as one signed batch, and every row carries a memo that says what it was for.",
+    "In Pinna, Tempo is the rail. A whole list — several people, several payments — leaves your wallet as one signed batch, and every row carries a memo saying what it was for.",
   steps: [
     "Add the people you pay, once.",
     "Write a list of payments or a request.",

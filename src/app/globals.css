@@ -309,7 +309,7 @@ select.field {
   color: var(--muted);
   font: inherit;
   font-size: 0.72rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 5px 10px;
   cursor: pointer;
@@ -319,6 +319,96 @@ select.field {
 .pick-button:hover {
   border-color: var(--sage);
   color: var(--sage);
+}
+
+/* The contact panel: a scrollable list under the button */
+.contact-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  z-index: 40;
+  width: 280px;
+  max-width: 78vw;
+  background: #1b1b1b;
+  border: 1px solid var(--hairline);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.contact-panel-head {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.contact-panel-list {
+  max-height: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.contact-panel-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--bone);
+  font: inherit;
+  text-align: left;
+  padding: 11px 14px;
+  cursor: pointer;
+}
+
+.contact-panel-row:hover {
+  background: rgba(122, 154, 126, 0.1);
+  color: var(--sage);
+}
+
+/* FAQ */
+.faq-item {
+  border-top: 1px solid var(--hairline);
+  padding: 20px 0;
+}
+
+.faq-q {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  color: var(--bone);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.faq-q span:last-child {
+  color: var(--sage);
+  flex: 0 0 auto;
+}
+
+.faq-a {
+  color: var(--muted);
+  font-size: 0.96rem;
+  margin: 10px 0 0;
+  max-width: 64ch;
+}
+
+/* Network warning */
+.network-warning {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid rgba(201, 139, 127, 0.35);
+  background: rgba(201, 139, 127, 0.08);
+  color: #d8a79b;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  border-radius: 4px;
 }
 
 /* History rows that open */

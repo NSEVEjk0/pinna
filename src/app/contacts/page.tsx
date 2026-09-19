@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePinna } from "@/lib/usePinna";
 import { isValidAddress, shortAddress } from "@/lib/money";
+import { Avatar } from "@/components/Avatar";
+import { fileToAvatar } from "@/lib/avatar";
 import type { Contact } from "@/lib/storage";
 
 export default function ContactsPage() {
@@ -13,6 +15,19 @@ export default function ContactsPage() {
   const [address, setAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Contact | null>(null);
+  const [picture, setPicture] = useState<string | null>(null);
+  const [pictureError, setPictureError] = useState<string | null>(null);
+
+  async function pickPicture(file: File | undefined) {
+    if (!file) return;
+    setPictureError(null);
+    try {
+      const avatar = await fileToAvatar(file);
+      setPicture(avatar.dataUrl);
+    } catch (err) {
+      setPictureError(err instanceof Error ? err.message : "That picture could not be used.");
+    }
+  }
 
   function add() {
     setError(null);
@@ -24,9 +39,10 @@ export default function ContactsPage() {
       setError("That does not look like a wallet address.");
       return;
     }
-    saveContact({ address, name: name.trim() }, false);
+    saveContact({ address, name: name.trim(), avatar: picture ?? undefined }, false);
     setName("");
     setAddress("");
+    setPicture(null);
   }
 
   function go(contact: Contact, mode: "send" | "request") {
@@ -100,12 +116,43 @@ export default function ContactsPage() {
             onChange={(e) => setAddress(e.target.value.trim())}
           />
         </label>
+        <div>
+          <span
+            className="faint"
+            style={{ fontSize: "0.72rem", letterSpacing: "0.14em", textTransform: "uppercase" }}
+          >
+            Picture
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6 }}>
+            <Avatar name={name || address} src={picture} size={38} />
+            <label className="pick-button" style={{ cursor: "pointer" }}>
+              {picture ? "Change" : "Choose"}
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => pickPicture(e.target.files?.[0])}
+              />
+            </label>
+            {picture ? (
+              <button
+                type="button"
+                className="nav-link"
+                style={{ background: "transparent", border: 0, cursor: "pointer" }}
+                onClick={() => setPicture(null)}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+        </div>
         <button className="button" onClick={add}>
           Save
         </button>
       </div>
 
       {error ? <p style={{ color: "#c98b7f", marginTop: 14 }}>{error}</p> : null}
+      {pictureError ? <p style={{ color: "#c98b7f", marginTop: 8 }}>{pictureError}</p> : null}
 
       {contacts.length === 0 ? (
         <p className="muted" style={{ marginTop: 36 }}>
@@ -127,11 +174,14 @@ export default function ContactsPage() {
                 flexWrap: "wrap",
               }}
             >
-              <div>
-                <p style={{ margin: 0, fontSize: "1.05rem" }}>{contact.name}</p>
-                <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.78rem" }}>
-                  {shortAddress(contact.address, 10, 6)}
-                </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+                <Avatar name={contact.name} address={contact.address} src={contact.avatar} size={40} />
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: "1.05rem" }}>{contact.name}</p>
+                  <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.78rem" }}>
+                    {shortAddress(contact.address, 10, 6)}
+                  </p>
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <span className="chip">
@@ -152,7 +202,37 @@ export default function ContactsPage() {
             <p className="eyebrow" style={{ margin: "0 0 8px" }}>
               Contact
             </p>
-            <h2 className="display" style={{ fontSize: "1.7rem", margin: "0 0 6px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Avatar
+                name={selected.name}
+                address={selected.address}
+                src={selected.avatar}
+                size={64}
+              />
+              <label className="pick-button" style={{ cursor: "pointer" }}>
+                {selected.avatar ? "Change picture" : "Add picture"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const avatar = await fileToAvatar(file);
+                      saveContact(
+                        { address: selected.address, name: selected.name, avatar: avatar.dataUrl },
+                        false
+                      );
+                      setSelected({ ...selected, avatar: avatar.dataUrl });
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "That picture could not be used.");
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <h2 className="display" style={{ fontSize: "1.7rem", margin: "14px 0 6px" }}>
               {selected.name}
             </h2>
             <p className="faint mono" style={{ margin: "0 0 24px", fontSize: "0.8rem", wordBreak: "break-all" }}>

@@ -1,5 +1,6 @@
 import type { PaymentRequest } from "./requests";
 import type { LedgerEntry } from "./ledger";
+import type { AutomationRule } from "./automation";
 
 /**
  * Everything Pinna knows lives in the browser, keyed by the connected wallet:
@@ -10,6 +11,8 @@ import type { LedgerEntry } from "./ledger";
 export interface Contact {
   address: `0x${string}`;
   name: string;
+  /** A small data URL, resized in the browser before it is stored. */
+  avatar?: string;
   /** How many times this contact has been paid or asked — repeat contacts sort to the top. */
   useCount: number;
   lastUsedAt: string;
@@ -79,7 +82,7 @@ export function loadContacts(wallet: string): Contact[] {
 /** Save or rename a contact, remembering how often they are used. */
 export function upsertContact(
   wallet: string,
-  contact: { address: `0x${string}`; name: string },
+  contact: { address: `0x${string}`; name: string; avatar?: string },
   options: { countUse?: boolean; at?: string } = {}
 ): Contact[] {
   const contacts = loadContacts(wallet);
@@ -92,6 +95,7 @@ export function upsertContact(
     contacts[idx] = {
       ...existing,
       name: contact.name || existing.name,
+      avatar: contact.avatar ?? existing.avatar,
       useCount: existing.useCount + (options.countUse ? 1 : 0),
       lastUsedAt: options.countUse ? at : existing.lastUsedAt,
     };
@@ -99,6 +103,7 @@ export function upsertContact(
     contacts.push({
       address: contact.address,
       name: contact.name,
+      avatar: contact.avatar,
       useCount: options.countUse ? 1 : 0,
       lastUsedAt: at,
     });
@@ -183,6 +188,31 @@ export function loadLastSync(wallet: string): string | null {
 
 export function saveLastSync(wallet: string, at: string): void {
   write(wallet, "lastSync", at);
+}
+
+/** Scheduled payments, kept per wallet like everything else. */
+export function loadRules(wallet: string): AutomationRule[] {
+  return read<AutomationRule[]>(wallet, "automation", []);
+}
+
+export function saveRules(wallet: string, rules: AutomationRule[]): AutomationRule[] {
+  write(wallet, "automation", rules);
+  return rules;
+}
+
+export function upsertRule(wallet: string, rule: AutomationRule): AutomationRule[] {
+  const rules = loadRules(wallet);
+  const idx = rules.findIndex((r) => r.id === rule.id);
+  if (idx >= 0) rules[idx] = rule;
+  else rules.unshift(rule);
+  return saveRules(wallet, rules);
+}
+
+export function removeRule(wallet: string, id: string): AutomationRule[] {
+  return saveRules(
+    wallet,
+    loadRules(wallet).filter((r) => r.id !== id)
+  );
 }
 
 export { EMPTY as EMPTY_STORE };

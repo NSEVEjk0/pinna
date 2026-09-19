@@ -30,6 +30,21 @@ describe("branding", () => {
     expect(TEMPO_COPY.steps).toHaveLength(4);
   });
 
+  it("describes the whole product in one phrase", () => {
+    expect(BRAND.oneLiner).toContain("Tempo");
+    expect(BRAND.oneLiner.length).toBeLessThan(90);
+    // The phrase covers paying, asking, and keeping the record.
+    expect(BRAND.oneLiner.toLowerCase()).toContain("pay a list");
+    expect(BRAND.oneLiner.toLowerCase()).toContain("request money");
+    expect(BRAND.oneLiner.toLowerCase()).toContain("receipt");
+  });
+
+  it("says what Tempo is trying to achieve", () => {
+    expect(TEMPO_COPY.goal.length).toBeGreaterThan(80);
+    expect(TEMPO_COPY.goal.toLowerCase()).toContain("stablecoin");
+    expect(TEMPO_COPY.goal.toLowerCase()).toContain("fee");
+  });
+
   it("draws the fern as an svg mark", () => {
     const html = renderToStaticMarkup(createElement(Fern, { size: 40 }));
     expect(html).toContain("<svg");
