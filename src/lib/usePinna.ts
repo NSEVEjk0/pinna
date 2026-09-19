@@ -40,7 +40,13 @@ import type { AutomationRule } from "./automation";
 export function usePinna() {
   const { address, isConnected } = useConnection();
   const { network } = useActiveNetwork();
-  const { token, options: tokenOptions, choose: chooseToken } = useTokenChoice(network);
+  const {
+    token,
+    options: tokenOptions,
+    choose: chooseToken,
+    addToken,
+    removeToken,
+  } = useTokenChoice(network);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [sent, setSent] = useState<SentList[]>([]);
@@ -265,6 +271,8 @@ export function usePinna() {
     token,
     tokenOptions,
     chooseToken,
+    addToken,
+    removeToken,
     alias,
     saveAlias,
     contacts,

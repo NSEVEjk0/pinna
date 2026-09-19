@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BRAND, EXAMPLE_CARDS, TEMPO_COPY } from "@/lib/brand";
+import { BRAND, EXAMPLE_CARDS, FEATURES, TEMPO_COPY } from "@/lib/brand";
 import { Fern, Wordmark } from "@/components/Fern";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
@@ -39,10 +39,25 @@ describe("branding", () => {
     expect(BRAND.oneLiner.toLowerCase()).toContain("receipt");
   });
 
-  it("says what Tempo is trying to achieve", () => {
-    expect(TEMPO_COPY.goal.length).toBeGreaterThan(80);
-    expect(TEMPO_COPY.goal.toLowerCase()).toContain("stablecoin");
-    expect(TEMPO_COPY.goal.toLowerCase()).toContain("fee");
+  it("says what Pinna is trying to achieve", () => {
+    expect(TEMPO_COPY.goal.length).toBeGreaterThan(120);
+    expect(TEMPO_COPY.goal.toLowerCase()).toContain("contact list");
+    // It is about Pinna's aim, not Tempo's.
+    expect(TEMPO_COPY.goal.toLowerCase()).not.toContain("tempo is betting");
+  });
+
+  it("says what Pinna does on Tempo, and lists every feature", () => {
+    expect(TEMPO_COPY.onTempo.toLowerCase()).toContain("batch");
+    expect(TEMPO_COPY.onTempo.toLowerCase()).toContain("memo");
+    expect(FEATURES.length).toBeGreaterThanOrEqual(10);
+    for (const feature of FEATURES) {
+      expect(feature.title.length).toBeGreaterThan(3);
+      expect(feature.body.length).toBeGreaterThan(40);
+    }
+    const titles = FEATURES.map((f) => f.title.toLowerCase()).join(" ");
+    expect(titles).toContain("contacts");
+    expect(titles).toContain("sync");
+    expect(titles).toContain("stablecoin");
   });
 
   it("draws the fern as an svg mark", () => {

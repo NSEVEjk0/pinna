@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Fern } from "@/components/Fern";
-import { EXAMPLE_CARDS, TEMPO_COPY } from "@/lib/brand";
+import { EXAMPLE_CARDS, FEATURES, TEMPO_COPY } from "@/lib/brand";
 import { FaqSection } from "@/components/Faq";
 
 export default function HomePage() {
@@ -68,9 +68,9 @@ export default function HomePage() {
           </div>
           <div>
             <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-              What Tempo is trying to do
+              What Pinna is trying to achieve
             </p>
-            <p className="muted" style={{ margin: 0, maxWidth: "46ch" }}>
+            <p className="muted" style={{ margin: 0, maxWidth: "52ch" }}>
               {TEMPO_COPY.goal}
             </p>
           </div>
@@ -78,10 +78,10 @@ export default function HomePage() {
         <hr className="rule" />
         <div style={{ padding: "0 0 40px" }}>
           <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-            What Tempo does inside Pinna
+            What Pinna does on Tempo
           </p>
           <p className="muted" style={{ margin: 0, maxWidth: "62ch" }}>
-            {TEMPO_COPY.inPinna}
+            {TEMPO_COPY.onTempo}
           </p>
         </div>
         <hr className="rule" />
@@ -139,6 +139,27 @@ export default function HomePage() {
               </p>
               <p className="faint" style={{ margin: 0, fontSize: "0.8rem", letterSpacing: "0.04em" }}>
                 {card.people.join(" · ")}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* Everything it does */}
+      <section className="shell" style={{ paddingTop: 72 }}>
+        <hr className="rule" />
+        <p className="eyebrow" style={{ margin: "32px 0 4px" }}>
+          Everything Pinna does
+        </p>
+        <h2 className="display" style={{ fontSize: "clamp(1.6rem, 3.4vw, 2.3rem)", margin: "0 0 8px" }}>
+          The whole product, in plain words.
+        </h2>
+        <div className="features">
+          {FEATURES.map((feature) => (
+            <article key={feature.title} className="feature-item">
+              <h3 style={{ margin: 0, fontSize: "1.02rem", fontWeight: 550 }}>{feature.title}</h3>
+              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.94rem" }}>
+                {feature.body}
               </p>
             </article>
           ))}

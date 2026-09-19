@@ -237,6 +237,54 @@ export async function readWalletTransfers(
   return transfers.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
 }
 
+/**
+ * Read a token's own description from the chain, so adding a stablecoin only
+ * needs its contract address. Returns null when the address is not a TIP-20.
+ */
+export async function readTokenMetadata(
+  network: TempoNetwork,
+  address: `0x${string}`
+): Promise<{ symbol: string; name: string; decimals: number } | null> {
+  const client = publicClientFor(network);
+  const abi = [
+    {
+      type: "function",
+      name: "symbol",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ type: "string" }],
+    },
+    {
+      type: "function",
+      name: "name",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ type: "string" }],
+    },
+    {
+      type: "function",
+      name: "decimals",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ type: "uint8" }],
+    },
+  ] as const;
+
+  try {
+    const [symbol, name, decimals] = await Promise.all([
+      client.readContract({ address, abi, functionName: "symbol" }),
+      client.readContract({ address, abi, functionName: "name" }).catch(() => ""),
+      client.readContract({ address, abi, functionName: "decimals" }),
+    ]);
+    const decimalsNumber = Number(decimals);
+    if (!symbol || !Number.isFinite(decimalsNumber) || decimalsNumber > 36) return null;
+    return { symbol: String(symbol), name: String(name || symbol), decimals: decimalsNumber };
+  } catch {
+    // not a token, or the chain could not be read — never guessed at
+    return null;
+  }
+}
+
 /** Read the token balance for an address, in base units. */
 export async function readTokenBalance(
   network: TempoNetwork,

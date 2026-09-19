@@ -512,3 +512,22 @@ select.field {
     grid-template-columns: minmax(0, 1fr) !important;
   }
 }
+
+/* The feature list on the home page */
+.features {
+  display: grid;
+  gap: 0;
+  margin-top: 26px;
+}
+
+.feature-item {
+  border-top: 1px solid var(--hairline);
+  padding: 20px 0;
+}
+
+@media (min-width: 800px) {
+  .features {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 56px;
+  }
+}
