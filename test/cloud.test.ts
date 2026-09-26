@@ -81,6 +81,8 @@ describe("link expiry", () => {
     expect(describeExpiry(null, NOW)).toBe("No expiry");
     expect(describeExpiry("2026-09-20T12:00:00.000Z", NOW)).toContain("Open until");
     expect(describeExpiry("2026-09-18T12:00:00.000Z", NOW)).toContain("Expired");
+    // The stamp is a UTC instant, and says so.
+    expect(describeExpiry("2026-09-20T12:00:00.000Z", NOW)).toContain("12:00 UTC");
   });
 });
 

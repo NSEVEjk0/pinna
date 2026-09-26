@@ -56,6 +56,7 @@ export function describeExpiry(
   if (!expiresAt) return "No expiry";
   const when = new Date(expiresAt);
   if (Number.isNaN(when.getTime())) return "No expiry";
-  const stamp = when.toISOString().slice(0, 16).replace("T", " ");
+  // The instant is UTC; say so rather than print a bare clock time.
+  const stamp = `${when.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   return isExpired(expiresAt, now) ? `Expired ${stamp}` : `Open until ${stamp}`;
 }

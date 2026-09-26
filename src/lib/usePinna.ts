@@ -16,12 +16,16 @@ import {
   type Contact,
   type SentList,
 } from "./storage";
-import { loadEvents, markAllRead, pushEvent, type PinnaEvent } from "./events";
+import { loadEvents, markAllRead, paidEvent, pushEvent, type PinnaEvent } from "./events";
 import { loadAlias, saveAlias as persistAlias } from "./profile";
 import { loadLedger, loadLastSync, saveLastSync, saveLedger } from "./storage";
 import { buildLedger, type LedgerEntry } from "./ledger";
 import { readWalletTransfers, DEEP_LOOKBACK } from "./chain";
-import { markPaid, type PaymentRequest } from "./requests";
+import { markPaid, type IncomingTransfer, type PaymentRequest } from "./requests";
+import { toDecoded, verifyTransfers } from "./verify";
+import { parseAmount } from "./money";
+import { tempoApiEnabled, transfersFromJson } from "./tempoApi";
+import type { TempoNetwork } from "./tempo";
 import {
   loadRules,
   removeRule,
@@ -30,9 +34,47 @@ import {
 import type { AutomationRule } from "./automation";
 
 /**
+ * Read the wallet's transfers. Tempo's indexed API answers first, because the
+ * RPC is documented as best-effort and outside the stable API contract; if the
+ * API cannot be reached the RPC is read directly. Either way the record is the
+ * chain's, so a failure to read is a delay, never a guess.
+ */
+async function readHistory(
+  network: TempoNetwork,
+  token: `0x${string}`,
+  address: `0x${string}`,
+  options: { quiet?: boolean }
+): Promise<IncomingTransfer[]> {
+  if (tempoApiEnabled()) {
+    try {
+      const query = new URLSearchParams({
+        address,
+        token,
+        chain: String(network.chainId),
+      });
+      const response = await fetch(`/api/transfers?${query}`, { cache: "no-store" });
+      if (response.ok) {
+        const body = (await response.json()) as { transfers?: unknown };
+        const transfers = transfersFromJson(body.transfers);
+        if (transfers.length > 0) return transfers;
+      }
+    } catch {
+      // fall through to reading the chain directly
+    }
+  }
+  return readWalletTransfers(network, token, address, {
+    lookbackBlocks: options.quiet ? 1_000_000n : DEEP_LOOKBACK,
+  });
+}
+
+/**
  * The wallet is the identity: contacts, lists, requests and notifications are
  * keyed by the connected address and never leave the browser. The network and
  * token follow whichever Tempo chain the wallet is on.
+ *
+ * Two settings are deliberately browser-wide rather than per wallet: the
+ * profile alias and the chosen token both live under one key, so switching
+ * wallets in the same browser keeps the same name and stablecoin.
  *
  * The chain itself is the record of what moved: `syncFromChain` reads every
  * transfer in and out of the wallet and turns it into the ledger.
@@ -89,10 +131,8 @@ export function usePinna() {
       setSyncError(null);
       try {
         // A quiet automatic pass looks at recent history only; the manual
-      // "Sync from Tempo" button reaches much further back.
-      const transfers = await readWalletTransfers(network, token.address, address, {
-        lookbackBlocks: options.quiet ? 1_000_000n : DEEP_LOOKBACK,
-      });
+        // "Sync from Tempo" button reaches much further back.
+        const transfers = await readHistory(network, token.address, address, options);
         const nameFor = (addr: string) =>
           loadContacts(address).find((c) => c.address.toLowerCase() === addr.toLowerCase())?.name;
 
@@ -233,6 +273,57 @@ export function usePinna() {
     setEvents(markAllRead(address));
   }, [address]);
 
+  /**
+   * Settle any waiting request these transfers pay.
+   *
+   * This is what the live feed calls, so a payment that lands on Tempo settles
+   * in the app as it lands rather than at the next manual sync. A transfer only
+   * settles a request if it carries that request's reference and covers its
+   * amount — the payer may be any wallet, which is the point of a pay link.
+   */
+  const settleIncoming = useCallback(
+    (transfers: IncomingTransfer[]): PaymentRequest[] => {
+      if (!address || transfers.length === 0) return [];
+      const decoded = toDecoded(transfers);
+      const settled: PaymentRequest[] = [];
+
+      const next = loadRequests(address).map((request) => {
+        if (request.status !== "waiting") return request;
+        let amountUnits: bigint;
+        try {
+          amountUnits = parseAmount(request.amount, token.decimals);
+        } catch {
+          return request;
+        }
+        const verdict = verifyTransfers(decoded, {
+          to: request.hostAddress,
+          amountUnits,
+          reference: request.id,
+        });
+        if (!verdict.ok || !verdict.matched) return request;
+
+        const paid = markPaid(request, {
+          txHash: verdict.matched.txHash,
+          settledBy: "detected",
+        });
+        paid.chainId = network.chainId;
+        paid.explorerUrl = network.explorerUrl;
+        settled.push(paid);
+        return paid;
+      });
+
+      if (settled.length > 0) {
+        next.forEach((request) => upsertRequest(address, request));
+        setRequests(loadRequests(address));
+        for (const request of settled) {
+          notify(paidEvent(request, request.txHash));
+        }
+      }
+      return settled;
+    },
+    [address, network, token, notify]
+  );
+
   /** Rules for scheduled payments. */
   const [rules, setRules] = useState<AutomationRule[]>([]);
 
@@ -289,6 +380,7 @@ export function usePinna() {
     syncFromChain,
     notify,
     readNotifications,
+    settleIncoming,
     saveContact,
     dropContact,
     recordSent,

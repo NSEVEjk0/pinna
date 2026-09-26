@@ -90,6 +90,12 @@ export interface IncomingTransfer {
   txHash: string;
   /** Seconds since epoch, as reported by the chain. */
   timestamp?: number;
+  /**
+   * A per-log identifier (transaction hash plus log index) when the source
+   * provides one. One transaction can carry several transfers, so this is what
+   * tells two payments to the same person in the same batch apart.
+   */
+  logId?: string;
 }
 
 export interface Amounts {

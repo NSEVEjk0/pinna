@@ -8,11 +8,14 @@ import { findSettlement, findPossibleMatch, markPaid, cancel, type PaymentReques
 import { parseAmount, formatAmount } from "@/lib/money";
 import { downloadReceipt } from "@/lib/receipt";
 import { findRepeats, type RepeatCandidate } from "@/lib/duplicates";
+import { findDuplicateReferences } from "@/lib/doublePay";
+import { downloadCsv, ledgerCsv, requestsCsv } from "@/lib/csv";
 import { paidEvent } from "@/lib/events";
-import { payLinkUrl } from "@/lib/paylink";
+import { payLinkUrl, payloadFromRequest } from "@/lib/paylink";
 import type { LedgerEntry } from "@/lib/ledger";
 import type { IncomingTransfer } from "@/lib/requests";
 import { readIncomingTransfers } from "@/lib/chain";
+import { useLiveTransfers } from "@/lib/useLiveTransfers";
 import { whenText, hashLabel } from "@/lib/format";
 import { Avatar } from "@/components/Avatar";
 
@@ -41,6 +44,7 @@ export default function HistoryPage() {
     syncFromChain,
     saveRequest,
     notify,
+    settleIncoming,
   } = usePinna();
 
   const avatarFor = (addr: string) =>
@@ -59,6 +63,13 @@ export default function HistoryPage() {
     void syncFromChain({ quiet: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, network.chainId]);
+
+  /*
+   * And keep watching while the page is open, so a payment settles the moment
+   * it lands rather than at the next sync. The poll behind this runs once on
+   * the server and is shared by everyone watching the same address.
+   */
+  useLiveTransfers(network, token.address, address, "recipient", settleIncoming);
 
   const sentLedger = useMemo(
     () => ledger.filter((e) => e.direction === "sent"),
@@ -88,7 +99,27 @@ export default function HistoryPage() {
         })),
     [ledger]
   );
-  const repeats = useMemo(() => findRepeats(repeatCandidates), [repeatCandidates]);
+  const repeats = useMemo(
+    () => findRepeats(repeatCandidates, token.decimals),
+    [repeatCandidates, token.decimals]
+  );
+
+  /*
+   * A reference carried by more than one transaction is a double payment. The
+   * first settles the request; the rest are refunds owed. The payer may be any
+   * wallet, so this is decided by the reference and nothing else.
+   */
+  const duplicates = useMemo(
+    () =>
+      findDuplicateReferences(
+        ledger.map((entry) => ({
+          reference: entry.reference,
+          txHash: entry.txHash,
+          amount: entry.amount,
+        }))
+      ),
+    [ledger]
+  );
 
   /** Settle waiting requests whose memo appeared, and offer the ones that did not. */
   async function checkTempo() {
@@ -155,6 +186,8 @@ export default function HistoryPage() {
       at: entry.at || new Date().toISOString(),
       tokenSymbol: entry.tokenSymbol,
       network: network.name,
+      chainId: entry.chainId,
+      reference: entry.reference ?? undefined,
       from: address ?? "",
       decimals: token.decimals,
       note: entry.reference
@@ -181,10 +214,27 @@ export default function HistoryPage() {
       at: request.paidAt ?? request.createdAt,
       tokenSymbol: token.symbol,
       network: network.name,
+      chainId: request.chainId ?? network.chainId,
+      reference: request.id,
       from: request.hostAddress,
       decimals: token.decimals,
       note: request.status === "paid" ? "Settled by a verified Tempo transfer." : undefined,
     });
+  }
+
+  /** Export what the current tab is showing, as a CSV a finance system can read. */
+  function exportCsv() {
+    const day = new Date().toISOString().slice(0, 10);
+    if (tab === TABS[0]) {
+      downloadCsv(`pinna-sent-${day}.csv`, ledgerCsv(sentLedger, network));
+    } else if (tab === TABS[1]) {
+      downloadCsv(`pinna-received-${day}.csv`, ledgerCsv(receivedLedger, network));
+    } else {
+      downloadCsv(
+        `pinna-waiting-${day}.csv`,
+        requestsCsv([...waiting, ...paidRequests, ...cancelled], network)
+      );
+    }
   }
 
   if (!isConnected) {
@@ -221,6 +271,9 @@ export default function HistoryPage() {
       >
         <button className="button button-quiet" onClick={checkTempo} disabled={syncing}>
           {syncing ? "Reading Tempo…" : "Sync from Tempo"}
+        </button>
+        <button className="button button-quiet" onClick={exportCsv}>
+          Export CSV
         </button>
         <span className="faint" style={{ fontSize: "0.82rem" }}>
           {lastSync
@@ -269,6 +322,50 @@ export default function HistoryPage() {
               </div>
               <p className="mono" style={{ margin: 0 }}>
                 {group.amount} each · {group.total} total
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {duplicates.length > 0 ? (
+        <div
+          className="panel"
+          style={{ padding: 22, marginBottom: 34, borderColor: "#a0564a" }}
+        >
+          <p className="eyebrow" style={{ margin: "0 0 6px" }}>
+            Paid twice
+          </p>
+          <p className="muted" style={{ margin: "0 0 16px", fontSize: "0.92rem" }}>
+            These references were carried by more than one transaction. The first one settles
+            the request; anything after it is a duplicate to send back, not another payment.
+          </p>
+          {duplicates.map((duplicate) => (
+            <div
+              key={duplicate.reference}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "baseline",
+                gap: 16,
+                padding: "12px 0",
+                borderTop: "1px solid var(--hairline)",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <p style={{ margin: 0 }}>
+                  ref {duplicate.reference}
+                  <span className="chip" style={{ marginLeft: 12 }}>
+                    {duplicate.count}×
+                  </span>
+                </p>
+                <p className="faint mono" style={{ margin: "4px 0 0", fontSize: "0.72rem", wordBreak: "break-all" }}>
+                  {duplicate.txHashes.join(" · ")}
+                </p>
+              </div>
+              <p className="mono" style={{ margin: 0 }}>
+                {duplicate.amount} each
               </p>
             </div>
           ))}
@@ -352,6 +449,8 @@ export default function HistoryPage() {
                   }}
                   onAttachLink={() => saveRequest({ ...request, hasLink: true })}
                   hostAlias={alias}
+                  tokenSymbol={token.symbol}
+                  tokenDecimals={token.decimals}
                   possible={possible[request.id]}
                   onAcceptPossible={(transfer) => {
                     const paid = markPaid(request, {
@@ -389,6 +488,8 @@ export default function HistoryPage() {
                     onToggle={() => setOpenRow(openRow === request.id ? null : request.id)}
                     onPdf={() => receiptForRequest(request)}
                     hostAlias={alias}
+                    tokenSymbol={token.symbol}
+                    tokenDecimals={token.decimals}
                   />
                 ))}
               </div>
@@ -414,6 +515,8 @@ export default function HistoryPage() {
                       open={false}
                       onToggle={() => {}}
                       onPdf={() => receiptForRequest(request)}
+                      tokenSymbol={token.symbol}
+                      tokenDecimals={token.decimals}
                     />
                   ))}
                 </div>
@@ -567,6 +670,8 @@ function RequestRow({
   onAcceptPossible,
   possible,
   hostAlias,
+  tokenSymbol,
+  tokenDecimals,
 }: {
   request: PaymentRequest;
   network: TempoNetwork;
@@ -580,6 +685,8 @@ function RequestRow({
   onAcceptPossible?: (transfer: IncomingTransfer) => void;
   possible?: IncomingTransfer;
   hostAlias?: string;
+  tokenSymbol: string;
+  tokenDecimals: number;
 }) {
   const hasHash = Boolean(request.txHash && request.txHash.startsWith("0x"));
   return (
@@ -675,7 +782,7 @@ function RequestRow({
                 Possible match
               </p>
               <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.88rem" }}>
-                A transfer of {formatAmount(possible.amountUnits, 6)} to you from{" "}
+                A transfer of {formatAmount(possible.amountUnits, tokenDecimals)} to you from{" "}
                 {possible.from.slice(0, 10)}… carries no reference, so Pinna will not call it
                 paid on its own. If this is the payment, confirm it.
               </p>
@@ -733,17 +840,14 @@ function RequestRow({
               <Link
                 className="link"
                 style={{ fontSize: "0.88rem" }}
-                href={payLinkUrl("/", {
-                  id: request.id,
-                  to: request.hostAddress,
-                  hostName: request.hostAlias ?? hostAlias ?? "",
-                  partyName: request.partyName,
-                  partyAddress: request.partyAddress,
-                  amount: request.amount,
-                  reason: request.reason,
-                  token: "USD",
-                  network: network.name,
-                })}
+                href={payLinkUrl(
+                  "/",
+                  payloadFromRequest(request, {
+                    token: tokenSymbol,
+                    network: network.name,
+                    hostName: request.hostAlias ?? hostAlias ?? "",
+                  })
+                )}
                 target="_blank"
               >
                 Open the pay page

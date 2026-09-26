@@ -1,7 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { isPositiveAmount, isValidAddress, type PayableRow } from "@/lib/money";
+import {
+  DEFAULT_DECIMALS,
+  formatAmount,
+  isPositiveAmount,
+  isValidAddress,
+  parseAmount,
+  type PayableRow,
+} from "@/lib/money";
 import type { Contact } from "@/lib/storage";
 import { ContactPicker } from "./ContactPicker";
 
@@ -14,6 +21,7 @@ export function RowsEditor({
   rows,
   contacts,
   tokenSymbol,
+  tokenDecimals = DEFAULT_DECIMALS,
   totalLabel,
   onChange,
   onAdd,
@@ -24,6 +32,7 @@ export function RowsEditor({
   rows: PayableRow[];
   contacts: Contact[];
   tokenSymbol: string;
+  tokenDecimals?: number;
   totalLabel: string;
   onChange: (id: string, patch: Partial<PayableRow>) => void;
   onAdd: () => void;
@@ -178,7 +187,7 @@ export function RowsEditor({
             {totalLabel}
           </span>
           <span className="mono" style={{ fontSize: "1.5rem" }}>
-            {formatTotal(rows)}
+            {formatTotal(rows, tokenDecimals)}
           </span>
           <span className="muted" style={{ marginLeft: 8, fontSize: "0.9rem" }}>
             {tokenSymbol}
@@ -193,20 +202,18 @@ export function RowsEditor({
   );
 }
 
-function formatTotal(rows: PayableRow[]): string {
+/** The running total, tolerant of a row still being typed. */
+function formatTotal(rows: PayableRow[], decimals: number): string {
   let units = 0n;
   for (const r of rows) {
     if (!r.amount) continue;
     try {
-      const [whole, frac = ""] = r.amount.split(".");
-      units += BigInt(whole || "0") * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
+      units += parseAmount(r.amount, decimals);
     } catch {
       // ignore an amount mid-typing
     }
   }
-  const whole = units / 1_000_000n;
-  const frac = (units % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
-  return `${whole}.${frac.length < 2 ? frac.padEnd(2, "0") : frac}`;
+  return formatAmount(units, decimals);
 }
 
 export function newRow(): PayableRow {

@@ -11,7 +11,7 @@ import {
   activeToken,
   explorerTxUrl,
 } from "@/lib/tempo";
-import { decodePayLink, draftMessage, encodePayLink, payLinkUrl } from "@/lib/paylink";
+import { decodePayLink, draftMessage, encodePayLink, payLinkUrl, payloadFromRequest } from "@/lib/paylink";
 import { receiptModel } from "@/lib/receipt";
 
 describe("branding", () => {
@@ -140,6 +140,34 @@ describe("pay links", () => {
 
   it("refuses to decode a link that is not ours", () => {
     expect(decodePayLink("not-base64-json")).toBeNull();
+  });
+
+  it("builds a payload from a request, keeping who asked and when it closes", () => {
+    const built = payloadFromRequest(
+      {
+        id: "req_1",
+        hostAddress: "0x9999999999999999999999999999999999999999",
+        partyName: "Jake",
+        partyAddress: "0x1111111111111111111111111111111111111111",
+        amount: "18.00",
+        reason: "Dinner",
+        message: "No rush — pay when you can.",
+        hasLink: true,
+        hasPdf: false,
+        status: "waiting",
+        createdAt: "2026-09-19T10:00:00.000Z",
+        hostAlias: "Sophia",
+        expiresAt: "2026-09-26T12:00:00.000Z",
+      },
+      { token: "pathUSD", network: "Tempo Testnet (Moderato)" }
+    );
+    expect(built.hostName).toBe("Sophia");
+    expect(built.partyName).toBe("Jake");
+    expect(built.partyAddress).toBe("0x1111111111111111111111111111111111111111");
+    expect(built.expiresAt).toBe("2026-09-26T12:00:00.000Z");
+    expect(built.message).toBe("No rush — pay when you can.");
+    // And it survives the trip through the url.
+    expect(decodePayLink(encodePayLink(built))).toEqual(built);
   });
 
   it("drafts a message naming the person, amount and link", () => {

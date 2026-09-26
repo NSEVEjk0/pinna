@@ -6,8 +6,12 @@ import Link from "next/link";
 import { useConnection, useSendTransactionSync } from "wagmi";
 import { decodePayLink, encodePayLink, paymentConfirmation } from "@/lib/paylink";
 import { buildBatch } from "@/lib/batch";
-import { explorerTxUrl, explorerForRecord } from "@/lib/tempo";
-import { shortAddress } from "@/lib/money";
+import { explorerTxUrl, explorerForRecord, sponsorFields } from "@/lib/tempo";
+import { shortAddress, parseAmount } from "@/lib/money";
+import { verifyPayment } from "@/lib/verify";
+import { decodeMemo } from "@/lib/memo";
+import { useLiveTransfers } from "@/lib/useLiveTransfers";
+import type { IncomingTransfer } from "@/lib/requests";
 import { useActiveNetwork } from "@/lib/useActiveNetwork";
 import { usePinna } from "@/lib/usePinna";
 import { downloadReceipt } from "@/lib/receipt";
@@ -120,6 +124,27 @@ export default function PayPage({ params }: { params: { id: string } }) {
     void checkTempo(false);
   }, [payload, checkTempo]);
 
+  /*
+   * And keep watching, so a payment made from another device (or by an agent)
+   * flips this page to its receipt without anyone pressing anything. If two
+   * people hold the same link, the second sees it is already paid.
+   */
+  const onLiveTransfer = useCallback(
+    (transfers: IncomingTransfer[]) => {
+      const match = transfers.find((transfer) => decodeMemo(transfer.memo) === params.id);
+      if (!match) return;
+      setSettled((previous) =>
+        previous ?? {
+          txHash: match.txHash,
+          at: match.timestamp ? new Date(match.timestamp * 1000).toISOString() : new Date().toISOString(),
+          from: match.from,
+        }
+      );
+    },
+    [params.id]
+  );
+  useLiveTransfers(network, tokenAddress, payload?.to, "recipient", onLiveTransfer);
+
   const batch = useMemo(() => {
     if (!payload) return null;
     return buildBatch(
@@ -141,20 +166,44 @@ export default function PayPage({ params }: { params: { id: string } }) {
   }, [payload, params.id, tokenAddress, network]);
 
   async function pay() {
-    if (!batch) return;
+    if (!batch || !payload) return;
     setError(null);
     setSending(true);
     try {
       const hash = await sendTransactionSyncAsync({
         calls: batch.calls,
         feeToken: tokenAddress,
+        ...sponsorFields(network),
       } as never);
       const resolved = typeof hash === "string" ? hash : "";
       if (!resolved) {
         setError("The wallet did not return a transaction hash, so nothing was recorded.");
         return;
       }
-      const entry = { txHash: resolved, at: new Date().toISOString(), from: address ?? undefined };
+
+      /*
+       * The transaction's own receipt is the proof: it is back the moment the
+       * transaction is included, and it lists the transfers that were made. So
+       * the payment is checked against what was asked for immediately, and only
+       * recorded once it actually matches.
+       */
+      const verdict = await verifyPayment(network, tokenAddress, resolved, {
+        to: payload.to,
+        amountUnits: parseAmount(payload.amount, linkToken.decimals),
+        reference: params.id,
+      });
+      if (!verdict.ok || !verdict.matched) {
+        setError(
+          `The transaction was included, but its transfer did not match this request (${verdict.reason ?? "no match"}). Nothing has been marked as paid — check the wallet it was sent from.`
+        );
+        return;
+      }
+
+      const entry = {
+        txHash: resolved,
+        at: new Date().toISOString(),
+        from: verdict.matched.from,
+      };
       writeLocalSettlement(params.id, entry);
       setSettled(entry);
     } catch (err) {
@@ -326,6 +375,8 @@ export default function PayPage({ params }: { params: { id: string } }) {
                   at: settled.at ?? new Date().toISOString(),
                   tokenSymbol: payload.token,
                   network: payload.network,
+                  chainId: network.chainId,
+                  reference: payload.id,
                   from: address ?? settled.from ?? "",
                   decimals: linkToken.decimals,
                   note: "This transfer carried the request reference as its memo.",
@@ -394,7 +445,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
           <button
             className="button"
             onClick={pay}
-            disabled={!isConnected || sending || !onRightChain || expired}
+            disabled={!isConnected || sending || !onRightChain || expired || checkingChain}
           >
             {sending ? "Waiting for your wallet…" : `Pay ${payload.amount} ${payload.token} on Tempo`}
           </button>

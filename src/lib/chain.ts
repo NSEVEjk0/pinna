@@ -333,7 +333,9 @@ export async function findTransferByReference(
   );
   if (logs.length === 0) return null;
 
-  const log = logs[logs.length - 1];
+  // The earliest transfer carrying the reference is the one that settles it,
+  // matching how findSettlement picks a payment.
+  const log = logs[0];
   const decoded = decodeEventLog({
     abi: [TRANSFER_WITH_MEMO],
     data: log.data,

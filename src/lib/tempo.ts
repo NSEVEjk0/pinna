@@ -142,3 +142,47 @@ export function explorerForRecord(
 export function explorerAddressUrl(network: TempoNetwork, address: string): string {
   return `${network.explorerUrl.replace(/\/+$/, "")}/address/${address}`;
 }
+
+/**
+ * The network a pay link names. A link carries the network it was written on,
+ * so a request made on mainnet is still read on mainnet even when this
+ * deployment points somewhere else — unless the deployment overrides it.
+ */
+export function networkForName(name: string | undefined): TempoNetwork {
+  const named = String(name ?? "").toLowerCase();
+  const override = (process.env.NEXT_PUBLIC_TEMPO_CHAIN || "").toLowerCase();
+  if (named.includes("mainnet") || override === "mainnet") return TEMPO_MAINNET;
+  return TEMPO_TESTNET;
+}
+
+/** A token on a network by symbol, falling back to the network's default. */
+export function tokenFor(network: TempoNetwork, symbol: string | undefined): TempoToken {
+  return network.tokens.find((t) => t.symbol === symbol) ?? network.defaultToken;
+}
+
+/**
+ * Fee sponsorship.
+ *
+ * Tempo fees are paid in a stablecoin, and a sponsor can pay them on the
+ * payer's behalf — so someone holding only the token being sent needs nothing
+ * else to spend it. `NEXT_PUBLIC_FEE_PAYER_URL` names the sponsor (a
+ * self-hosted Relay handler, or Tempo's hosted Fee Payer API). The Moderato
+ * testnet runs a public, keyless sponsor, which is used unless sponsorship is
+ * turned off with `NEXT_PUBLIC_SPONSOR_FEES=false` or a URL is given. Mainnet
+ * has no public sponsor, so sponsorship there is off until one is configured.
+ */
+export function feePayerUrl(network: TempoNetwork): string | null {
+  const configured = process.env.NEXT_PUBLIC_FEE_PAYER_URL;
+  if (configured) return configured.replace(/\/+$/, "");
+  if (process.env.NEXT_PUBLIC_SPONSOR_FEES === "false") return null;
+  return network.key === "testnet" ? "https://sponsor.moderato.tempo.xyz" : null;
+}
+
+export function sponsorsFees(network: TempoNetwork): boolean {
+  return feePayerUrl(network) !== null;
+}
+
+/** The Tempo transaction fields that ask the sponsor to pay the fee. */
+export function sponsorFields(network: TempoNetwork): Record<string, never> | { feePayer: true } {
+  return sponsorsFees(network) ? { feePayer: true } : {};
+}

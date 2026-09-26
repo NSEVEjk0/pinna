@@ -6,7 +6,7 @@ import { RowsEditor, newRow, payableRows } from "@/components/RowsEditor";
 import { usePinna } from "@/lib/usePinna";
 import { displayName, formatAmount, listTotal, type PayableRow } from "@/lib/money";
 import { newReference } from "@/lib/memo";
-import { draftMessage, payLinkUrl, reminderMessage } from "@/lib/paylink";
+import { draftMessage, payLinkUrl, payloadFromRequest, reminderMessage } from "@/lib/paylink";
 import { downloadReceipt } from "@/lib/receipt";
 import { requestGreeting } from "@/lib/profile";
 import { useDraftContact } from "@/lib/useDraftContact";
@@ -19,6 +19,8 @@ interface DraftExtras {
   link: boolean;
   pdf: boolean;
   message: boolean;
+  /** An optional note for the payer, shown on the pay page. */
+  note: string;
 }
 
 export default function RequestPage() {
@@ -39,7 +41,7 @@ export default function RequestPage() {
   const [rows, setRows] = useState<PayableRow[]>([newRow()]);
   const [extras, setExtras] = useState<Record<string, DraftExtras>>({});
   const [stage, setStage] = useState<Stage>("edit");
-  const [created, setCreated] = useState<PaymentRequest[]>([]);
+  const [created, setCreated] = useState<{ request: PaymentRequest; extras: DraftExtras }[]>([]);
   const [origin, setOrigin] = useState("");
   const [fromName, setFromName] = useState(alias);
   const [expiryChoice, setExpiryChoice] = useState<ExpiryChoice>("never");
@@ -66,7 +68,7 @@ export default function RequestPage() {
   }
 
   function extrasFor(id: string): DraftExtras {
-    return extras[id] ?? { link: true, pdf: false, message: true };
+    return extras[id] ?? { link: true, pdf: false, message: true, note: "" };
   }
 
   function setExtrasFor(id: string, patch: Partial<DraftExtras>) {
@@ -84,7 +86,7 @@ export default function RequestPage() {
     if (!address) return;
     const at = new Date().toISOString();
     const expiresAt = resolveExpiry(expiryChoice, expiryDate, new Date(at));
-    const made: PaymentRequest[] = ready.map((row) => {
+    const made = ready.map((row) => {
       const choice = extrasFor(row.id);
       const request: PaymentRequest = {
         id: newReference("req"),
@@ -93,6 +95,7 @@ export default function RequestPage() {
         partyAddress: row.address,
         amount: row.amount,
         reason: row.reason ?? "",
+        message: choice.note.trim() || undefined,
         hostAlias: fromName.trim() || alias,
         expiresAt,
         hasLink: choice.link,
@@ -110,7 +113,9 @@ export default function RequestPage() {
         requestId: request.id,
       });
       if (row.name.trim()) saveContact({ address: row.address, name: row.name.trim() }, true);
-      return request;
+      // Keep the toggles with the request they were chosen for, so the
+      // confirmation screen shows what was actually created.
+      return { request, extras: choice };
     });
     setCreated(made);
     setStage("created");
@@ -169,6 +174,7 @@ export default function RequestPage() {
             rows={rows}
             contacts={contacts}
             tokenSymbol={token.symbol}
+            tokenDecimals={token.decimals}
             totalLabel="Total requested"
             onChange={update}
             onAdd={() => setRows((prev) => [...prev, newRow()])}
@@ -234,6 +240,15 @@ export default function RequestPage() {
                     />
                     <Toggle label="PDF" checked={choice.pdf} onChange={(v) => setExtrasFor(row.id, { pdf: v })} />
                   </div>
+                  {choice.message ? (
+                    <input
+                      className="field"
+                      placeholder={`An optional note for ${displayName(row)} — shown on the pay page`}
+                      value={choice.note}
+                      onChange={(e) => setExtrasFor(row.id, { note: e.target.value })}
+                      style={{ marginTop: 14, maxWidth: 520 }}
+                    />
+                  ) : null}
                 </div>
               );
             })}
@@ -301,21 +316,15 @@ export default function RequestPage() {
             from History.
           </p>
 
-          {created.map((request) => {
-            const choice = extrasFor(request.partyAddress);
-            const url = payLinkUrl(origin || "https://pinna.app", {
-              id: request.id,
-              to: request.hostAddress,
-              hostName: fromName || alias,
-              partyName: request.partyName,
-              partyAddress: request.partyAddress,
-              expiresAt: request.expiresAt ?? null,
-              amount: request.amount,
-              reason: request.reason,
-              message: request.message,
-              token: token.symbol,
-              network: network.name,
-            });
+          {created.map(({ request, extras: choice }) => {
+            const url = payLinkUrl(
+              origin || "https://pinna.app",
+              payloadFromRequest(request, {
+                token: token.symbol,
+                network: network.name,
+                hostName: fromName || alias,
+              })
+            );
             return (
               <div key={request.id} className="panel" style={{ padding: 22, marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -419,6 +428,8 @@ export default function RequestPage() {
                           at: new Date().toISOString(),
                           tokenSymbol: token.symbol,
                           network: network.name,
+                          chainId: network.chainId,
+                          reference: request.id,
                           from: request.hostAddress,
                           decimals: token.decimals,
                           note: `Pay to ${request.hostAddress} on ${network.name}. Quote reference ${request.id}.`,

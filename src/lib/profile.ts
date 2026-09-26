@@ -1,6 +1,9 @@
 /**
- * A wallet's own name. Pinna asks for it once, and puts it on the things the
- * wallet sends out, so a stranger receiving a request knows who is asking.
+ * The name Pinna puts on the things this browser sends out, so a stranger
+ * receiving a request knows who is asking. Pinna asks for it once.
+ *
+ * It is one value for the whole browser, not one per wallet — the same key is
+ * set in localStorage whichever address is connected.
  */
 
 const ALIAS_KEY = "pinna:profile:alias";

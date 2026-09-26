@@ -37,7 +37,7 @@ export interface LedgerEntry {
 
 export interface BuildLedgerInput {
   transfers: IncomingTransfer[];
-  sent: { rows?: SentRowSummary[]; txHash: string; at: string; rowsMap?: Record<string, SentRowSummary> }[];
+  sent: { rows?: SentRowSummary[]; txHash: string; at: string }[];
   requests: PaymentRequest[];
   address: string;
   decimals: number;

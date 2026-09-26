@@ -9,22 +9,32 @@ Tempo — a payments-first Layer 1 where the stablecoin doubles as the gas token
 There is no Pinna account and no server holding funds. Your wallet is the
 identity; contacts, lists and requests live in your browser.
 
+Built for the **Colosseum Crypto World's Fair — Tempo Track**. See
+[`PITCH.md`](PITCH.md) for the problem, market and business model, and
+[`DEMO.md`](DEMO.md) for a three-minute walkthrough.
+
 ---
 
 ## What Tempo gives Pinna
 
-Two Tempo features do the heavy lifting:
+Pinna is built out of Tempo's own primitives rather than dropped on top of
+them:
 
 - **Tempo transactions batch calls.** One transaction can carry many calls, so
   a list of twenty payments is a single signature instead of twenty popups.
 - **TIP-20 transfers can carry a 32-byte memo.** Every transfer Pinna sends
   carries a reference, so a payment is also the record of what it was for.
-
-Fees are paid in the same stablecoin you are sending — Tempo has no separate
-gas token to hold. Pinna currently pays fees in the token being sent (the
-`feeToken` field on the Tempo transaction). Fee sponsorship (`feePayer`) is
-documented by Tempo but is not wired up here, because it needs a sponsoring
-account to run.
+  This is what lets history reconcile itself without a central ledger.
+- **Fees are paid in the stablecoin being sent.** Tempo has no separate gas
+  token to hold, so a payer who has the token has everything.
+- **Fees can be sponsored.** A sponsor can pay the fee through the `feePayer`
+  field, so paying a link needs no gas at all. The Moderato testnet runs a
+  public keyless sponsor; mainnet needs one configured (see Environment).
+- **Execution can be scheduled.** `validAfter`/`validBefore` bound the window
+  in which the chain will accept a transfer, so a scheduled payment carries its
+  own schedule rather than relying on an app being open.
+- **Requests speak the Machine Payments Protocol**, so a person and an agent
+  pay the same request the same way (see below).
 
 ## Networks
 
@@ -100,21 +110,34 @@ no account: connecting the wallet is what claims the data.
 It needs `TURSO_DATABASE_URL` (and `TURSO_AUTH_TOKEN`) on the deployment; until
 those are set the sync page says so plainly rather than pretending.
 
-### Agents can pay a request (MPP 402)
+### Agents can pay a request (Machine Payments Protocol)
 
-The same request a person opens also answers a machine:
+The same request a person opens also answers a machine, in the wire format the
+Machine Payments Protocol defines — implemented with the official [`mppx`](https://mpp.dev)
+SDK rather than hand-rolled headers:
 
 ```
-GET  /api/pay/{id}?d={payload}            -> 402 challenge, or 200 if already paid
-POST /api/pay/{id}?d={payload} {txHash}   -> 200 with a Payment-Receipt header
+GET  /api/pay/{id}?d={payload}
+     -> 200 with a Payment-Receipt if already paid
+     -> 410 if the link has closed
+     -> 402 with `WWW-Authenticate: Payment id="…", method="tempo", intent="charge", request="…"`
+POST /api/pay/{id}?d={payload}      (Authorization: Payment <credential>)
+     -> 200 with the resource and a Payment-Receipt header
 ```
 
-Ask without paying and the route replies **402** with the amount, token, chain,
-recipient and the reference that must go in the memo. Send the transfer on
-Tempo, present its hash (body or `X-Payment`), and the route reads the chain
-itself and returns the verified facts plus a signed `Payment-Receipt`. A hash
-that does not match, or a reference that has not been paid, gets 402 again — it
-is never taken on trust.
+Ask without paying and the route replies **402** carrying a challenge that
+names the amount, the TIP-20 token, the chain, the recipient and the reference.
+Errors use RFC 9457 problem details (`application/problem+json`). A credential
+is verified against Tempo itself, so a reference that has not been paid gets
+402 again — nothing is taken on trust.
+
+The person's pay page and the agent's endpoint are the same request, settled by
+the same transfer with the same memo.
+
+**MCP.** The same request is also exposed as a Model Context Protocol tool at
+`POST /api/mcp`: an agent hands `pinna_payment_request` a pay link and gets back
+what is owed and the endpoint that settles it, without needing to know anything
+about Tempo.
 
 ### Link expiry
 
@@ -131,6 +154,12 @@ Three tabs:
 - **Money requested / received by you**
 - **Waiting (links not paid / outstanding payments)** — with a button that
   reads Tempo and settles anything that has been paid.
+
+History is read through the **Tempo API** (`/v1/transfers`, which returns the
+memo with each transfer), because Tempo's documentation marks the public RPC as
+best-effort and outside the stable API contract. If the API cannot be reached,
+Pinna falls back to reading the RPC directly — a failure to read is a delay,
+never a guess.
 
 Every row opens. A sent list shows the batch: the transaction hash, the
 network, when it finalised, every name with its amount and reason, and a
@@ -168,7 +197,9 @@ their transaction hash.
 
 1. **Scheduled payments.** Daily, weekly, monthly or yearly, at a time of day
    you choose, each with its own note written into the transfer memo. When a run
-   comes due and Pinna is open it appears ready to sign.
+   comes due and Pinna is open it appears ready to sign, and the transfer
+   carries a `validAfter`/`validBefore` window so the chain itself bounds when
+   it may execute.
 2. **An agent that pays for you — under development.** A future version gives
    Pinna a Tempo (or x402) account it can operate itself, so payments can go out
    on a schedule or when a milestone is reached, within limits you set. It is
@@ -199,7 +230,7 @@ Anything else is left alone. Pinna never guesses that a payment is yours.
 ```bash
 npm install
 npm run dev      # http://localhost:3000
-npm test         # 58 tests
+npm test         # 125 tests
 npm run build
 ```
 
@@ -213,12 +244,27 @@ Names only — values belong in `.env.local`, which is never committed.
 | `NEXT_PUBLIC_TEMPO_RPC` | Override the RPC endpoint |
 | `NEXT_PUBLIC_TEMPO_EXPLORER` | Override the explorer base URL |
 | `NEXT_PUBLIC_TIP20` | Send a different TIP-20 token address |
+| `NEXT_PUBLIC_TIP20_SYMBOL` | Open on a different built-in token |
+| `NEXT_PUBLIC_FEE_PAYER_URL` | Sponsor endpoint that pays the payer's fee |
+| `NEXT_PUBLIC_SPONSOR_FEES` | `false` to switch sponsorship off |
+| `NEXT_PUBLIC_TEMPO_API` | `off` to skip the Tempo API and read the RPC only |
+| `TEMPO_API_URL` | Override the Tempo API base URL |
+| `TEMPO_API_KEY` | Tempo API key (server-side only); raises read limits to 10,000 |
+| `MPP_SECRET_KEY` | Binds machine-payment challenges to their contents |
+| `MPP_REALM` | Realm named in a payment challenge |
 | `TURSO_DATABASE_URL` | Cloud sync database (unset = sync off) |
 | `TURSO_AUTH_TOKEN` | Cloud sync credentials |
+| `HOST_KEY_SECRET` | Signs machine-payment receipts |
 
-No private keys, no server secrets. Signing happens in the browser wallet, and
-adding Tempo to a wallet uses `wallet_addEthereumChain` — no key ever leaves
-the wallet.
+No private keys. Signing happens in the browser wallet, and adding Tempo to a
+wallet uses `wallet_addEthereumChain` — no key ever leaves the wallet. The two
+secrets above sign challenges and receipts, never transfers.
+
+**Fee sponsorship.** On the Moderato testnet the public keyless sponsor at
+`https://sponsor.moderato.tempo.xyz` is used by default, so a payer holding only
+the stablecoin can pay. Mainnet has no public sponsor: point
+`NEXT_PUBLIC_FEE_PAYER_URL` at your own Relay handler or Tempo's hosted Fee
+Payer API, or set `NEXT_PUBLIC_SPONSOR_FEES=false`.
 
 ## Tests
 
@@ -240,6 +286,10 @@ The suite covers the parts where a mistake would cost money:
   requests, and the confirmation a payer sends back.
 - **Brand and networks** — the name, the handle, the X link, the five example
   cards, the documented chain ids and endpoints, pay-link round-trips.
+- **Tempo API** — transfers read from the indexed API map onto Pinna's shape,
+  decoded memos are put back into the form a transfer carries, base units
+  survive the wire as text with no floating-point drift, and a malformed record
+  is dropped rather than guessed at.
 
 ## Notes and limits
 
@@ -253,6 +303,9 @@ The suite covers the parts where a mistake would cost money:
 ---
 
 Built by CK · https://x.com/CRYPTFRANI
+
+[MIT licensed](LICENSE). Uses Tempo's [Machine Payments Protocol](https://mpp.dev/protocol)
+via [`mppx`](https://www.npmjs.com/package/mppx).
 
 ## Running it on a server
 

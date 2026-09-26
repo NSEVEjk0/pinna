@@ -13,12 +13,13 @@ import {
   dueRules,
   isValidTimeOfDay,
   nextRunAt,
+  previousRunAt,
   type AutomationRule,
   type Frequency,
 } from "@/lib/automation";
 import { buildBatch } from "@/lib/batch";
 import { encodeNote } from "@/lib/memo";
-import { explorerTxUrl } from "@/lib/tempo";
+import { explorerTxUrl, sponsorFields } from "@/lib/tempo";
 import { AutomationAgentPanel } from "@/components/AutomationAgentPanel";
 
 function todayIso(): string {
@@ -97,9 +98,24 @@ export default function AutomationPage() {
           referenceFor: () => rule.memo || rule.title || rule.id,
         }
       );
+      /*
+       * Tempo can carry the schedule itself: `validAfter`/`validBefore` bound
+       * the window in which the chain will accept the transfer, so a run
+       * belongs to the period it was due in rather than to whenever the wallet
+       * happened to be open. The window opens at the occurrence being signed
+       * (or now, if it is already late) and stays open for a day.
+       */
+      const due = previousRunAt(rule) ?? new Date();
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const validAfter = Math.min(Math.floor(due.getTime() / 1000), nowSeconds);
+      const validBefore = nowSeconds + 24 * 60 * 60;
+
       const hash = await sendTransactionSyncAsync({
         calls: batch.calls,
         feeToken: token.address,
+        validAfter,
+        validBefore,
+        ...sponsorFields(network),
       } as never);
       const resolved = typeof hash === "string" ? hash : "";
       if (!resolved) {

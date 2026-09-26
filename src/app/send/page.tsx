@@ -7,7 +7,7 @@ import { RowsEditor, newRow, payableRows } from "@/components/RowsEditor";
 import { usePinna } from "@/lib/usePinna";
 import { buildBatch } from "@/lib/batch";
 import { formatAmount, groupByRecipient, listTotal, displayName, type PayableRow } from "@/lib/money";
-import { explorerTxUrl } from "@/lib/tempo";
+import { explorerTxUrl, sponsorFields } from "@/lib/tempo";
 import { downloadReceipt } from "@/lib/receipt";
 import { useActiveNetwork } from "@/lib/useActiveNetwork";
 import { useDraftContact } from "@/lib/useDraftContact";
@@ -59,6 +59,7 @@ export default function SendPage() {
       const hash = await sendTransactionSyncAsync({
         calls: batch.calls,
         feeToken: token.address,
+        ...sponsorFields(network),
       } as never);
       const resolved = typeof hash === "string" ? hash : "";
       if (!resolved) {
@@ -124,6 +125,7 @@ export default function SendPage() {
             rows={rows}
             contacts={contacts}
             tokenSymbol={token.symbol}
+            tokenDecimals={token.decimals}
             totalLabel="Total"
             onChange={update}
             onAdd={() => setRows((prev) => [...prev, newRow()])}
@@ -252,6 +254,7 @@ export default function SendPage() {
                   at: new Date().toISOString(),
                   tokenSymbol: token.symbol,
                   network: network.name,
+                  chainId: network.chainId,
                   from: address ?? "",
                   decimals: token.decimals,
                   note: "Every transfer in this receipt carried a reference memo on Tempo.",

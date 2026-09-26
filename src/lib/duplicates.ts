@@ -1,4 +1,4 @@
-import { parseAmount } from "./money";
+import { DEFAULT_DECIMALS, formatAmount, parseAmount } from "./money";
 
 /**
  * Spotting repeats. If the same person is paid the same amount several times
@@ -28,9 +28,9 @@ export interface RepeatGroup {
   lastAt: string;
 }
 
-function amountKey(amount: string): string {
+function amountKey(amount: string, decimals: number): string {
   try {
-    return parseAmount(amount).toString();
+    return parseAmount(amount, decimals).toString();
   } catch {
     return amount.trim();
   }
@@ -41,10 +41,13 @@ function amountKey(amount: string): string {
  * the same address for the same amount; rows sent inside one batch are
  * repeats too, which is exactly the case worth flagging.
  */
-export function findRepeats(payments: RepeatCandidate[]): RepeatGroup[] {
+export function findRepeats(
+  payments: RepeatCandidate[],
+  decimals = DEFAULT_DECIMALS
+): RepeatGroup[] {
   const groups = new Map<string, RepeatGroup>();
   for (const payment of payments) {
-    const key = `${payment.address.toLowerCase()}|${amountKey(payment.amount)}`;
+    const key = `${payment.address.toLowerCase()}|${amountKey(payment.amount, decimals)}`;
     const existing = groups.get(key);
     if (existing) {
       existing.count += 1;
@@ -68,24 +71,16 @@ export function findRepeats(payments: RepeatCandidate[]): RepeatGroup[] {
 
   return [...groups.values()]
     .filter((g) => g.count > 1)
-    .map((g) => ({
-      ...g,
-      total: sumOf(g.items.map((i) => i.amount)),
-    }))
+    .map((g) => {
+      // Every item in a group carries the same amount, so the total is that
+      // amount times the count — never a floating-point sum.
+      let total = g.amount;
+      try {
+        total = formatAmount(parseAmount(g.amount, decimals) * BigInt(g.count), decimals);
+      } catch {
+        // an amount we cannot read is listed as it came, rather than guessed at
+      }
+      return { ...g, total };
+    })
     .sort((a, b) => b.count - a.count || b.lastAt.localeCompare(a.lastAt));
-}
-
-function sumOf(amounts: string[]): string {
-  let units = 0n;
-  for (const a of amounts) {
-    try {
-      const [whole, frac = ""] = a.split(".");
-      units += BigInt(whole || "0") * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
-    } catch {
-      // skip an amount we cannot read
-    }
-  }
-  const whole = units / 1_000_000n;
-  const frac = (units % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "");
-  return `${whole}.${frac.length < 2 ? frac.padEnd(2, "0") : frac}`;
 }

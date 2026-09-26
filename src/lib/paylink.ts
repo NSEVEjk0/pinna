@@ -65,19 +65,28 @@ export function payLinkUrl(baseUrl: string, payload: PayLinkPayload): string {
   return `${base}/pay/${payload.id}?d=${encodePayLink(payload)}`;
 }
 
+/**
+ * Build the payload a pay link carries from a stored request. The whole request
+ * travels in the link, so everything the pay page shows has to be copied here —
+ * the name of whoever is asking, who it was addressed to, the note written for
+ * the payer, and when the link closes.
+ */
 export function payloadFromRequest(
   request: PaymentRequest,
-  extras: { token: string; network: string }
+  extras: { token: string; network: string; hostName?: string }
 ): PayLinkPayload {
   return {
     id: request.id,
     to: request.hostAddress,
-    hostName: request.partyName ? "" : "",
+    hostName: extras.hostName ?? request.hostAlias ?? "",
     amount: request.amount,
     reason: request.reason,
     message: request.message,
     token: extras.token,
     network: extras.network,
+    partyName: request.partyName,
+    partyAddress: request.partyAddress,
+    expiresAt: request.expiresAt ?? null,
   };
 }
 

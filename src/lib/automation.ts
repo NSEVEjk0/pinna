@@ -46,17 +46,6 @@ export function isValidTimeOfDay(value: string): boolean {
   return TIME_RE.test(String(value ?? "").trim());
 }
 
-/** Local date parts for a date, so times are compared in the user's own zone. */
-function parts(date: Date) {
-  return {
-    year: date.getFullYear(),
-    month: date.getMonth(),
-    day: date.getDate(),
-    hours: date.getHours(),
-    minutes: date.getMinutes(),
-  };
-}
-
 function at(date: Date, hours: number, minutes: number): Date {
   const next = new Date(date);
   next.setHours(hours, minutes, 0, 0);

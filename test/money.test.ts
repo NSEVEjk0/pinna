@@ -44,6 +44,17 @@ describe("amounts", () => {
     expect(formatAmount(0n)).toBe("0.00");
   });
 
+  it("follows the token's decimals rather than assuming six", () => {
+    // An eight-decimal token holds the extra digits, a six-decimal one does not.
+    expect(parseAmount("18.123456", 8)).toBe(18_12345600n);
+    expect(isAmountInput("1.2345678", 8)).toBe(true);
+    expect(isAmountInput("1.2345678", 6)).toBe(false);
+    // A whole-unit token allows no fractional part at all.
+    expect(parseAmount("12", 0)).toBe(12n);
+    expect(isAmountInput("12.5", 0)).toBe(false);
+    expect(formatAmount(18_12345600n, 8)).toBe("18.123456");
+  });
+
   it("sums a list exactly, with no floating point drift", () => {
     const rows = [row({ amount: "0.1" }), row({ amount: "0.2" })];
     expect(listTotal(rows)).toBe(300_000n);

@@ -7,13 +7,22 @@ import { parseUnits, formatUnits } from "viem";
 
 export class AmountError extends Error {}
 
-const AMOUNT_RE = /^\d+(\.\d{1,6})?$/;
-
 export const DEFAULT_DECIMALS = 6;
+
+/**
+ * A plain positive decimal with no more fractional digits than the token
+ * holds — six for the stablecoins, but a token added by contract address may
+ * carry any number of decimals, so the shape follows the token.
+ */
+function amountPattern(decimals: number): RegExp {
+  return decimals > 0
+    ? new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`)
+    : /^\d+$/;
+}
 
 export function parseAmount(input: string, decimals = DEFAULT_DECIMALS): bigint {
   const s = String(input ?? "").trim();
-  if (!AMOUNT_RE.test(s)) {
+  if (!amountPattern(decimals).test(s)) {
     throw new AmountError(`Enter an amount like 18 or 18.50`);
   }
   return parseUnits(s, decimals);

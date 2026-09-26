@@ -16,6 +16,10 @@ export interface ReceiptInput {
   tokenSymbol: string;
   network: string;
   from: string;
+  /** The chain the transfer landed on, so the network name is unambiguous. */
+  chainId?: number;
+  /** The reference the payment carried in its memo. */
+  reference?: string;
   decimals?: number;
   note?: string;
   /** Optional label for the person or list this receipt belongs to. */
@@ -27,6 +31,8 @@ export interface ReceiptLine {
   address: string;
   amount: string;
   reason: string;
+  /** Each row of a batch carries its own reference. */
+  reference?: string;
 }
 
 export interface ReceiptModel {
@@ -35,6 +41,8 @@ export interface ReceiptModel {
   total: string;
   tokenSymbol: string;
   network: string;
+  chainId?: number;
+  reference?: string;
   from: string;
   txHash: string;
   explorerUrl: string;
@@ -64,6 +72,8 @@ export function receiptModel(input: ReceiptInput): ReceiptModel {
     total: formatAmount(totalUnits, decimals),
     tokenSymbol: input.tokenSymbol,
     network: input.network,
+    chainId: input.chainId,
+    reference: input.reference,
     from: input.from,
     txHash: input.txHash,
     explorerUrl: input.explorerUrl,
@@ -74,6 +84,8 @@ export function receiptModel(input: ReceiptInput): ReceiptModel {
       address: r.address,
       amount: r.amount,
       reason: r.reason ?? "",
+      // A row's own id is the reference its transfer carried.
+      reference: r.id,
     })),
   };
 }
@@ -137,34 +149,45 @@ export async function downloadReceipt(input: ReceiptInput, filename?: string): P
 
   let y = 168;
 
-  // Fact row
+  /*
+   * Fact grid: who it is for, what it was, where it happened and how to look it
+   * up. Three columns per row, wrapping for the longer sets.
+   */
   const facts: [string, string][] = [
     ["ISSUED", stamp(model.issuedAt)],
     ["NETWORK", model.network],
+    ["CHAIN", model.chainId ? String(model.chainId) : "—"],
     ["FROM", model.from],
+    ["REFERENCE", model.reference || "—"],
+    ["TOKEN", model.tokenSymbol],
   ];
-  doc.setFontSize(7.5);
-  doc.setTextColor(muted[0], muted[1], muted[2]);
-  facts.forEach(([label], i) => {
-    doc.text(label, margin + i * 168, y);
-  });
-  doc.setFontSize(9.5);
-  doc.setTextColor(coal[0], coal[1], coal[2]);
-  facts.forEach(([, value], i) => {
-    doc.text(String(value).slice(0, 30), margin + i * 168, y + 14);
+  const perRow = 3;
+  const factColW = (pageW - margin * 2) / perRow;
+  const lineH = 32;
+  facts.forEach(([label, value], i) => {
+    const x = margin + (i % perRow) * factColW;
+    const fy = y + Math.floor(i / perRow) * lineH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(muted[0], muted[1], muted[2]);
+    doc.text(label, x, fy);
+    doc.setFontSize(9.5);
+    doc.setTextColor(coal[0], coal[1], coal[2]);
+    doc.text(String(value).slice(0, 28), x, fy + 13);
   });
 
-  y += 38;
+  y += lineH * Math.ceil(facts.length / perRow) + 6;
   doc.setDrawColor(sage[0], sage[1], sage[2]);
   doc.setLineWidth(0.8);
   doc.line(margin, y, pageW - margin, y);
   y += 18;
 
   // Column heads
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(muted[0], muted[1], muted[2]);
   doc.text("PAYMENT", margin, y);
-  doc.text("REFERENCE", margin + 250, y);
+  doc.text("REASON", margin + 250, y);
   doc.text("AMOUNT", pageW - margin, y, { align: "right" });
   y += 8;
   doc.setDrawColor(line[0], line[1], line[2]);
@@ -183,7 +206,7 @@ export async function downloadReceipt(input: ReceiptInput, filename?: string): P
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(sage[0], sage[1], sage[2]);
-      doc.text(entry.reason.slice(0, 44), margin + 250, y);
+      doc.text(entry.reason.slice(0, 40), margin + 250, y);
     }
 
     doc.setFont("helvetica", "normal");
@@ -192,9 +215,16 @@ export async function downloadReceipt(input: ReceiptInput, filename?: string): P
     doc.text(`${entry.amount} ${model.tokenSymbol}`, pageW - margin, y, { align: "right" });
 
     y += 12;
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(muted[0], muted[1], muted[2]);
     doc.text(entry.address, margin, y);
+    if (entry.reference) {
+      // The reference the transfer carried, which is what ties this row to a
+      // transaction on chain.
+      doc.setFont("courier", "normal");
+      doc.text(`ref ${entry.reference}`, margin + 250, y);
+    }
     y += 20;
 
     if (y > pageH - 170) {

@@ -48,11 +48,6 @@ export function isPinnaMemo(memo: string | undefined | null): boolean {
   return decodeMemo(memo) !== null;
 }
 
-/** The memo for a payment row: the request id when paying a request, else a row ref. */
-export function memoForRow(row: { reason?: string; reference?: string }): `0x${string}` {
-  return encodeMemo(row.reference || "row");
-}
-
 /**
  * A plain note written straight into the 32-byte memo, without the Pinna
  * prefix — used by scheduled payments, where the memo is a label for the
