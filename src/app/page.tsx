@@ -23,11 +23,11 @@ export default function HomePage() {
             </p>
             <h1
               className="display"
-              style={{ fontSize: "clamp(2.6rem, 6.2vw, 4.6rem)", margin: "0 0 26px", maxWidth: "17ch" }}
+              style={{ fontSize: "clamp(2.6rem, 6.2vw, 4.6rem)", margin: "0 0 26px", maxWidth: "22ch" }}
             >
-              Names and reminders.
+              Pay a list, request money,
               <br />
-              <em style={{ color: "var(--sage)" }}>Dollars move on Tempo.</em>
+              <em style={{ color: "var(--sage)" }}>and keep every receipt.</em>
             </h1>
             <p className="muted" style={{ fontSize: "1.1rem", maxWidth: "52ch", margin: "0 0 34px" }}>
               Pinna is a contact list that pays. Write down who you pay and what each payment is
