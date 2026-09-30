@@ -22,8 +22,32 @@ const sans = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Pinna — names and reminders, dollars on Tempo",
-  description: BRAND.oneLiner,
+  title: "Pinna — pay a list, request money, keep every receipt",
+  description: `${BRAND.oneLiner} A contact list that settles a whole list of payments in one signature, writes the reason into every transfer, and reads the record back from the chain.`,
+  applicationName: "Pinna",
+  keywords: [
+    "stablecoin payments",
+    "payroll",
+    "batch payments",
+    "Tempo",
+    "TIP-20",
+    "invoicing",
+    "remittances",
+  ],
+  openGraph: {
+    title: "Pinna — pay a list, request money, keep every receipt",
+    description: BRAND.oneLiner,
+    siteName: "Pinna",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pinna — pay a list, request money, keep every receipt",
+    description: BRAND.oneLiner,
+  },
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://pinna-ckay.vercel.app"
+  ),
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

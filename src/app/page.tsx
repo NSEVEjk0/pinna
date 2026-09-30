@@ -30,9 +30,10 @@ export default function HomePage() {
               <em style={{ color: "var(--sage)" }}>Dollars move on Tempo.</em>
             </h1>
             <p className="muted" style={{ fontSize: "1.1rem", maxWidth: "52ch", margin: "0 0 34px" }}>
-              Pinna keeps the list of who you pay, writes the reason on every transfer, and
-              settles the whole list in a single signature — with a request flow, reminders and
-              repeats for everything that is not a one-off. The money lives on Tempo.
+              Pinna is a contact list that pays. Write down who you pay and what each payment is
+              for, then settle the whole list with one signature — or send a link and let people
+              pay you. Every transfer lands on Tempo with its reason written in, so your records
+              explain themselves.
             </p>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <Link className="button" href="/send">
@@ -60,7 +61,7 @@ export default function HomePage() {
         >
           <div>
             <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-              What Tempo is
+              The network
             </p>
             <p className="muted" style={{ margin: 0, maxWidth: "46ch" }}>
               {TEMPO_COPY.what}
@@ -68,7 +69,7 @@ export default function HomePage() {
           </div>
           <div>
             <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-              What Pinna is trying to achieve
+              Why Pinna exists
             </p>
             <p className="muted" style={{ margin: 0, maxWidth: "52ch" }}>
               {TEMPO_COPY.goal}
@@ -78,7 +79,7 @@ export default function HomePage() {
         <hr className="rule" />
         <div style={{ padding: "0 0 40px" }}>
           <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-            What Pinna does on Tempo
+            What that gives you
           </p>
           <p className="muted" style={{ margin: 0, maxWidth: "62ch" }}>
             {TEMPO_COPY.onTempo}
@@ -126,7 +127,7 @@ export default function HomePage() {
       {/* Example cards */}
       <section className="shell" style={{ paddingTop: 64 }}>
         <p className="eyebrow" style={{ margin: "0 0 8px" }}>
-          What people use it for
+          Example use cases
         </p>
         <div className="examples">
           {EXAMPLE_CARDS.map((card) => (
@@ -149,10 +150,10 @@ export default function HomePage() {
       <section className="shell" style={{ paddingTop: 72 }}>
         <hr className="rule" />
         <p className="eyebrow" style={{ margin: "32px 0 4px" }}>
-          Everything Pinna does
+          Features
         </p>
         <h2 className="display" style={{ fontSize: "clamp(1.6rem, 3.4vw, 2.3rem)", margin: "0 0 8px" }}>
-          The whole product, in plain words.
+          Everything Pinna does, in plain words.
         </h2>
         <div className="features">
           {FEATURES.map((feature) => (

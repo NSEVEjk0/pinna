@@ -318,7 +318,7 @@ export default function RequestPage() {
 
           {created.map(({ request, extras: choice }) => {
             const url = payLinkUrl(
-              origin || "https://pinna.app",
+              origin || "https://pinna-ckay.vercel.app",
               payloadFromRequest(request, {
                 token: token.symbol,
                 network: network.name,
