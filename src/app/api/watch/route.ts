@@ -1,4 +1,4 @@
-import { subscribe, type WatchKey } from "@/lib/server/watchHub";
+import { subscribe, POLL_MS, type WatchKey } from "@/lib/server/watchHub";
 import { toTransferJson } from "@/lib/tempoApi";
 import { TEMPO_MAINNET, TEMPO_TESTNET } from "@/lib/tempo";
 
@@ -67,7 +67,7 @@ export async function GET(request: Request): Promise<Response> {
 
       // How long the browser should wait before reconnecting if we drop.
       write("retry: 3000\n\n");
-      write(`event: ready\ndata: ${JSON.stringify({ poll: 2000 })}\n\n`);
+      write(`event: ready\ndata: ${JSON.stringify({ poll: POLL_MS })}\n\n`);
 
       unsubscribe = subscribe({ chainId, token, address, role }, (transfers) => {
         write(`event: transfers\ndata: ${JSON.stringify(transfers.map(toTransferJson))}\n\n`);

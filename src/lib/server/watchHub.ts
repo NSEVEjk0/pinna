@@ -20,7 +20,8 @@ import type { IncomingTransfer } from "../requests";
  * it, so one open app or a hundred cost the same number of calls.
  */
 
-const POLL_MS = 1000;
+/** How often a watched address is re-read. */
+export const POLL_MS = 1000;
 
 type Listener = (transfers: IncomingTransfer[]) => void;
 
