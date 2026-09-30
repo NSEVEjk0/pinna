@@ -104,12 +104,13 @@ lines, in order of how quickly they could be turned on:
 
 Honest snapshot as of **2026-09-24** (submissions close 2026-10-12):
 
-- The app is **built and passing**: 116 tests, clean typecheck, production
-  build.
+- The app is **built, passing and live**: 155 tests, clean typecheck,
+  production build, deployed on Vercel at
+  [pinna-ckay.vercel.app](https://pinna-ckay.vercel.app) (with `pinna.app`
+  attached as a custom domain). The demo runs on the Moderato testnet.
 - **Source is open** (MIT), and the components are reusable — the memo codec,
-  batch builder, ledger and MPP route are all separable.
-- **Not yet deployed publicly** and no external users yet; the demo runs on
-  the Moderato testnet.
+  batch builder, ledger, MPP route and CSV/PDF exports are all separable.
+- **No external users yet** — this is a working product, not yet a used one.
 - What is *not* built is labelled as such in the app rather than implied (the
   autonomy agent on `/automation` says "under development" on the page).
 
