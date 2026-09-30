@@ -96,7 +96,29 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* How Pinna works */}
+      {/* Example cards */}
+      <section className="shell" style={{ paddingTop: 64 }}>
+        <p className="eyebrow" style={{ margin: "0 0 8px" }}>
+          Example use cases
+        </p>
+        <div className="examples">
+          {EXAMPLE_CARDS.map((card) => (
+            <article key={card.title} className="example-card">
+              <h2 className="display" style={{ fontSize: "1.5rem", margin: "0 0 12px" }}>
+                {card.title}
+              </h2>
+              <p className="muted" style={{ margin: "0 0 14px", fontSize: "0.97rem" }}>
+                {card.body}
+              </p>
+              <p className="faint" style={{ margin: 0, fontSize: "0.8rem", letterSpacing: "0.04em" }}>
+                {card.people.join(" · ")}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* How Pinna works, and everything it does */}
       <section className="shell" style={{ paddingTop: 72 }}>
         <hr className="rule" />
         <p className="eyebrow" style={{ margin: "32px 0 4px" }}>
@@ -130,34 +152,8 @@ export default function HomePage() {
             </article>
           ))}
         </div>
-      </section>
 
-      {/* Example cards */}
-      <section className="shell" style={{ paddingTop: 64 }}>
-        <p className="eyebrow" style={{ margin: "0 0 8px" }}>
-          Example use cases
-        </p>
-        <div className="examples">
-          {EXAMPLE_CARDS.map((card) => (
-            <article key={card.title} className="example-card">
-              <h2 className="display" style={{ fontSize: "1.5rem", margin: "0 0 12px" }}>
-                {card.title}
-              </h2>
-              <p className="muted" style={{ margin: "0 0 14px", fontSize: "0.97rem" }}>
-                {card.body}
-              </p>
-              <p className="faint" style={{ margin: 0, fontSize: "0.8rem", letterSpacing: "0.04em" }}>
-                {card.people.join(" · ")}
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      {/* Everything it does */}
-      <section className="shell" style={{ paddingTop: 72 }}>
-        <hr className="rule" />
-        <p className="eyebrow" style={{ margin: "32px 0 4px" }}>
+        <p className="eyebrow" style={{ margin: "56px 0 4px" }}>
           Features
         </p>
         <h2 className="display" style={{ fontSize: "clamp(1.6rem, 3.4vw, 2.3rem)", margin: "0 0 8px" }}>

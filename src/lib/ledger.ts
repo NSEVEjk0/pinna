@@ -1,10 +1,15 @@
-import { decodeMemo, decodeNote } from "./memo";
+import { decodeMemo } from "./memo";
 import { formatAmount } from "./money";
 import type { IncomingTransfer, PaymentRequest } from "./requests";
 import type { SentRowSummary } from "./storage";
 
 /**
- * The ledger: what actually happened, taken from Tempo itself.
+ * The ledger: what Pinna sent and received, taken from Tempo itself.
+ *
+ * Only transfers that carry one of Pinna's own references appear. A transfer
+ * with no reference, or with somebody else's note in the memo, happened on
+ * Tempo but not in Pinna — it is not a payment this app made, asked for, or
+ * knows what to do with, so it is left out rather than guessed at.
  *
  * Local records know what a payment was *for*; the chain knows what actually
  * moved. Merging them is what lets Pinna say "paid" for transfers already sent
@@ -70,43 +75,48 @@ export function buildLedger(input: BuildLedgerInput): LedgerEntry[] {
 
   const requestById = new Map(requests.map((r) => [r.id, r]));
 
-  const entries: LedgerEntry[] = transfers.map((transfer, index) => {
-    const outgoing = transfer.from.toLowerCase() === me;
-    const counterparty = outgoing ? transfer.to : transfer.from;
-    const reference = decodeMemo(transfer.memo);
-    // A memo that is not one of our references is still worth showing — it is
-    // the note the payer wrote.
-    const note = reference ? null : decodeNote(transfer.memo);
+  const entries: LedgerEntry[] = transfers
+    .map((transfer, index): LedgerEntry | null => {
+      // Only Pinna's own payments belong here. A transfer carrying no reference
+      // — or somebody else's memo — happened on Tempo, but it is not something
+      // this app sent or asked for, so it is left out rather than guessed at.
+      const reference = decodeMemo(transfer.memo);
+      if (!reference) return null;
 
-    const request = reference ? requestById.get(reference) : undefined;
-    const local = reasonByHash.get(`${transfer.txHash.toLowerCase()}|${counterparty.toLowerCase()}`);
+      const outgoing = transfer.from.toLowerCase() === me;
+      const counterparty = outgoing ? transfer.to : transfer.from;
 
-    // The name shown is always the other side's: for money in, the person who
-    // paid; for money out, the person paid.
-    const name = local?.name || request?.partyName || input.nameFor(counterparty) || "";
+      const request = requestById.get(reference);
+      const local = reasonByHash.get(
+        `${transfer.txHash.toLowerCase()}|${counterparty.toLowerCase()}`
+      );
 
-    // The reason, in order of trust: what the local record says this payment
-    // was for, what the request it pays says, then any note written into the
-    // memo itself.
-    const reason = local?.reason || request?.reason || note || "";
+      // The name shown is always the other side's: for money in, the person who
+      // paid; for money out, the person paid.
+      const name = local?.name || request?.partyName || input.nameFor(counterparty) || "";
 
-    return {
-      id: `${transfer.txHash}-${index}`,
-      direction: outgoing ? "sent" : "received",
-      status: outgoing ? "paid" : "received",
-      address: counterparty,
-      name,
-      amount: formatAmount(transfer.amountUnits, decimals),
-      tokenSymbol,
-      reference,
-      reason,
-      txHash: transfer.txHash,
-      at: isoFrom(transfer.timestamp),
-      chainId,
-      explorerUrl,
-      fromChain: true,
-    };
-  });
+      // The reason, in order of trust: what the local record says this payment
+      // was for, then what the request it pays says.
+      const reason = local?.reason || request?.reason || "";
+
+      return {
+        id: `${transfer.txHash}-${index}`,
+        direction: outgoing ? "sent" : "received",
+        status: outgoing ? "paid" : "received",
+        address: counterparty,
+        name,
+        amount: formatAmount(transfer.amountUnits, decimals),
+        tokenSymbol,
+        reference,
+        reason,
+        txHash: transfer.txHash,
+        at: isoFrom(transfer.timestamp),
+        chainId,
+        explorerUrl,
+        fromChain: true,
+      };
+    })
+    .filter((entry): entry is LedgerEntry => entry !== null);
 
   // A request settled by a transfer that predates our lookback window still
   // deserves a row, so the record is not lost.

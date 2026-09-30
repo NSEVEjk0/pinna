@@ -129,8 +129,8 @@ describe("the ledger, built from chain transfers", () => {
       sent: [],
       requests: [],
       transfers: [
-        { from: HOST, to: JAKE, amountUnits: 500000n, memo: null, txHash: "0xout", timestamp: 1000 },
-        { from: JAKE, to: HOST, amountUnits: 200000n, memo: null, txHash: "0xin", timestamp: 2000 },
+        { from: HOST, to: JAKE, amountUnits: 500000n, memo: encodeMemo("row_out"), txHash: "0xout", timestamp: 1000 },
+        { from: JAKE, to: HOST, amountUnits: 200000n, memo: encodeMemo("row_in"), txHash: "0xin", timestamp: 2000 },
       ],
     });
     expect(sentEntries(entries)).toHaveLength(1);
@@ -139,6 +139,20 @@ describe("the ledger, built from chain transfers", () => {
     expect(receivedEntries(entries)[0].status).toBe("received");
     expect(sentEntries(entries)[0].amount).toBe("0.50");
     expect(sentEntries(entries)[0].name).toBe("Jake");
+  });
+
+  it("leaves out a transfer that carries no Pinna reference", () => {
+    // It moved on Tempo, but Pinna did not send it and cannot say what it is.
+    const entries = buildLedger({
+      ...base,
+      sent: [],
+      requests: [],
+      transfers: [
+        { from: HOST, to: JAKE, amountUnits: 500000n, memo: null, txHash: "0xplain", timestamp: 1000 },
+        { from: JAKE, to: HOST, amountUnits: 200000n, memo: "0x74656d706f2d636865727279000000000000000000000000000000000000000000", txHash: "0xother", timestamp: 2000 },
+      ],
+    });
+    expect(entries).toHaveLength(0);
   });
 
   it("carries the hash and the reference onto the entry", () => {
@@ -165,7 +179,7 @@ describe("the ledger, built from chain transfers", () => {
     expect(entry.at).toContain("1970"); // timestamp 3000 seconds
   });
 
-  it("uses the local list to name and explain a payment that had no memo", () => {
+  it("uses the local list to name and explain one of our own payments", () => {
     const [entry] = buildLedger({
       ...base,
       requests: [],
@@ -177,11 +191,12 @@ describe("the ledger, built from chain transfers", () => {
         },
       ],
       transfers: [
-        { from: HOST, to: JAKE, amountUnits: 500000n, memo: null, txHash: "0xlist", timestamp: 4000 },
+        { from: HOST, to: JAKE, amountUnits: 500000n, memo: encodeMemo("row_1"), txHash: "0xlist", timestamp: 4000 },
       ],
     });
     expect(entry.reason).toBe("Friday payroll");
     expect(entry.name).toBe("Jake");
+    expect(entry.reference).toBe("row_1");
   });
 
   it("keeps a settled request even when the transfer predates the window", () => {

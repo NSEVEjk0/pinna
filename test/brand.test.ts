@@ -202,19 +202,20 @@ describe("pay links", () => {
     expect(decodePayLink(encodePayLink(built))).toEqual(built);
   });
 
-  it("drafts a message naming the person, amount and link", () => {
+  it("drafts a message naming neither side, with the link", () => {
     const msg = draftMessage({
-      hostName: "Sophia",
-      partyName: "Jake",
       amount: "18.00",
       reason: "Dinner",
       url: "https://pinna.app/pay/req_123?d=x",
       tokenSymbol: "pathUSD",
     });
-    expect(msg).toContain("Jake");
     expect(msg).toContain("18.00 pathUSD");
     expect(msg).toContain("Dinner");
     expect(msg).toContain("https://pinna.app/pay/req_123?d=x");
+    expect(msg).toContain("no matter which wallet you use for the payment".replace(/^./, (c) => c.toUpperCase()));
+    // Nobody is named, so the message reads the same however it is forwarded.
+    expect(msg).not.toContain("Sophia");
+    expect(msg).not.toContain("Jake");
   });
 });
 

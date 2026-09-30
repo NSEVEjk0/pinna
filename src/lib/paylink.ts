@@ -90,26 +90,27 @@ export function payloadFromRequest(
   };
 }
 
-/** The draft message a host can copy into a chat app along with the link. */
+/**
+ * The draft message a host can copy into a chat app along with the link.
+ *
+ * It names nobody — not the person asking, not the person paying. The request
+ * speaks for itself, and the link carries the details, so the message stays
+ * useful however it is forwarded.
+ */
 export function draftMessage(input: {
-  hostName: string;
-  partyName: string;
   amount: string;
   reason: string;
   url: string;
   tokenSymbol: string;
 }): string {
-  const who = input.hostName?.trim();
   const lines = [
-    `Hi ${input.partyName || "there"} — it's me ${who || "your friend"}.`,
+    `Please pay up your money for ${input.reason || "what you owe"}.`,
     "",
-    `Please pay up your bill of ${input.amount} ${input.tokenSymbol}${
-      input.reason ? ` for ${input.reason}` : ""
-    }.`,
+    `${input.amount} ${input.tokenSymbol}`,
     "",
     `Pay on Tempo: ${input.url}`,
     "",
-    "The transfer carries a reference, so it is matched to this request automatically.",
+    "The transfer carries a reference, so it is matched to this request automatically. No matter which wallet you use for the payment.",
   ];
   return lines.join("\n");
 }

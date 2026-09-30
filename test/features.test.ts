@@ -113,18 +113,20 @@ describe("alias and greetings", () => {
 });
 
 describe("payer messages", () => {
-  it("names the requester in the draft message", () => {
+  it("writes a draft message that names neither side", () => {
     const text = draftMessage({
-      hostName: "Ckay",
-      partyName: "John",
       amount: "0.2",
       reason: "Breakfast",
       url: "https://pinna.app/pay/req_1?d=x",
       tokenSymbol: "pathUSD",
     });
-    expect(text).toContain("Hi John — it's me Ckay.");
-    expect(text).toContain("Please pay up your bill of 0.2 pathUSD for Breakfast.");
+    expect(text).toContain("Please pay up your money for Breakfast.");
+    expect(text).toContain("0.2 pathUSD");
     expect(text).toContain("https://pinna.app/pay/req_1?d=x");
+    expect(text).toContain("No matter which wallet you use for the payment.");
+    // No name of the person asking, or of the person paying.
+    expect(text).not.toContain("Ckay");
+    expect(text).not.toContain("John");
   });
 
   it("writes a confirmation naming the requester with the full hash", () => {

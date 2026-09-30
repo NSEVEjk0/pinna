@@ -9,7 +9,7 @@ import {
   occurrencesBetween,
   type AutomationRule,
 } from "@/lib/automation";
-import { decodeNote, encodeNote, decodeMemo, MEMO_BYTES } from "@/lib/memo";
+import { decodeNote, encodeNote, decodeMemo, encodeMemo, MEMO_BYTES } from "@/lib/memo";
 import { buildLedger } from "@/lib/ledger";
 import { FAQ } from "@/components/Faq";
 
@@ -170,15 +170,17 @@ describe("the ledger shows why money moved", () => {
         },
       ],
       transfers: [
-        { from: HOST, to: JAKE, amountUnits: 400_000_000n, memo: null, txHash: "0xtx", timestamp: 1000 },
+        { from: HOST, to: JAKE, amountUnits: 400_000_000n, memo: encodeMemo("row_1"), txHash: "0xtx", timestamp: 1000 },
       ],
     });
     expect(entry.reason).toBe("Studio rent");
     expect(entry.name).toBe("Jake");
+    expect(entry.reference).toBe("row_1");
   });
 
-  it("falls back to the note written in the memo", () => {
-    const [entry] = buildLedger({
+  it("leaves out a transfer whose memo is not one of ours", () => {
+    // Somebody else's note, or no note at all: not a Pinna payment.
+    const entries = buildLedger({
       ...base,
       requests: [],
       sent: [],
@@ -193,8 +195,7 @@ describe("the ledger shows why money moved", () => {
         },
       ],
     });
-    expect(entry.reason).toBe("Studio rent");
-    expect(entry.reference).toBeNull();
+    expect(entries).toHaveLength(0);
   });
 
   it("leaves the reason empty when nothing explains it", () => {
@@ -203,7 +204,7 @@ describe("the ledger shows why money moved", () => {
       requests: [],
       sent: [],
       transfers: [
-        { from: HOST, to: JAKE, amountUnits: 1_000_000n, memo: null, txHash: "0xbare", timestamp: 1000 },
+        { from: HOST, to: JAKE, amountUnits: 1_000_000n, memo: encodeMemo("row_9"), txHash: "0xbare", timestamp: 1000 },
       ],
     });
     expect(entry.reason).toBe("");

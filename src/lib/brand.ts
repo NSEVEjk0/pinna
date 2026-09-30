@@ -158,8 +158,8 @@ export const FEATURES = [
     body: "Every payment as a PDF, and sent, received and waiting as CSV — ready for a spreadsheet or an accounts system.",
   },
   {
-    title: "Agents can pay too",
-    body: "The same request answers a machine: ask without paying and it replies with what is owed, then returns a receipt.",
+    title: "Agents can pay, and you can see it",
+    body: "An agent can pay a request the same way a person does. Every payment it makes lands in your history with the reference, the reason and the time, so you can see what it did, and why.",
   },
 ] as const;
 

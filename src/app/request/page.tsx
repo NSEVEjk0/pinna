@@ -360,8 +360,6 @@ export default function RequestPage() {
                           onClick={() =>
                             navigator.clipboard?.writeText(
                               draftMessage({
-                                hostName: fromName || alias,
-                                partyName: request.partyName,
                                 amount: request.amount,
                                 reason: request.reason,
                                 url,

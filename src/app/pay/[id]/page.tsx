@@ -194,7 +194,7 @@ export default function PayPage({ params }: { params: { id: string } }) {
       });
       if (!verdict.ok || !verdict.matched) {
         setError(
-          `The transaction was included, but its transfer did not match this request (${verdict.reason ?? "no match"}). Nothing has been marked as paid — check the wallet it was sent from.`
+          `The transaction went through, but it does not carry this request's reference, so it cannot be matched to the request (${verdict.reason ?? "no match"}). This usually means the wallet sent a plain transfer instead of a Tempo transaction, which is where the reference is written. Your money is unaffected — the hash is ${resolved}.`
         );
         return;
       }
@@ -465,7 +465,9 @@ export default function PayPage({ params }: { params: { id: string } }) {
               onClick={() => checkTempo(true)}
               disabled={checkingChain}
             >
-              {checkingChain ? "Reading Tempo…" : "Check Tempo"}
+              {checkingChain
+                ? "Reading Tempo…"
+                : "If you've already paid this, check Tempo"}
             </button>
             {checkNote ? (
               <span className="muted" style={{ fontSize: "0.86rem" }}>
