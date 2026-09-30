@@ -15,7 +15,7 @@ import type { IncomingTransfer } from "@/lib/requests";
 import { useActiveNetwork } from "@/lib/useActiveNetwork";
 import { usePinna } from "@/lib/usePinna";
 import { downloadReceipt } from "@/lib/receipt";
-import { findTransferByReference } from "@/lib/chain";
+import { findTransferByReference, RECENT_LOOKBACK, DEFAULT_LOOKBACK } from "@/lib/chain";
 import { describeExpiry, isExpired } from "@/lib/expiry";
 
 /**
@@ -86,12 +86,14 @@ export default function PayPage({ params }: { params: { id: string } }) {
 
   /** Ask Tempo whether this reference has been paid. */
   const checkTempo = useCallback(
-    async (announce = false) => {
+    async (announce = false, lookbackBlocks = RECENT_LOOKBACK, quiet = false) => {
       if (!payload) return;
-      setCheckingChain(true);
+      if (!quiet) setCheckingChain(true);
       if (announce) setCheckNote(null);
       try {
-        const found = await findTransferByReference(network, tokenAddress, payload.to, params.id);
+        const found = await findTransferByReference(network, tokenAddress, payload.to, params.id, {
+          lookbackBlocks,
+        });
         if (found) {
           setSettled({
             txHash: found.txHash,
@@ -109,19 +111,25 @@ export default function PayPage({ params }: { params: { id: string } }) {
           );
         }
       } finally {
-        setCheckingChain(false);
+        if (!quiet) setCheckingChain(false);
       }
     },
     [payload, network, tokenAddress, params.id]
   );
 
-  // Run the check as soon as the page knows what it is looking for.
+  /*
+   * The check that gates the button looks at a recent window — one small read,
+   * so the page is usable straight away. A wider look follows quietly, so a
+   * payment made long ago is still found without holding anyone up.
+   */
   useEffect(() => {
     if (!payload) {
       setCheckingChain(false);
       return;
     }
-    void checkTempo(false);
+    void checkTempo(false, RECENT_LOOKBACK).then(() => {
+      void checkTempo(false, DEFAULT_LOOKBACK, true);
+    });
   }, [payload, checkTempo]);
 
   /*

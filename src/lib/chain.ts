@@ -19,11 +19,27 @@ export function viemChainFor(network: TempoNetwork) {
   return network.chainId === tempo.id ? tempo : tempoModerato;
 }
 
-export function publicClientFor(network: TempoNetwork) {
+function makeClient(network: TempoNetwork) {
   return createPublicClient({
     chain: viemChainFor(network),
     transport: http(network.rpcUrl),
   });
+}
+
+type TempoClient = ReturnType<typeof makeClient>;
+
+/**
+ * Clients are reused rather than rebuilt: creating one per call rebuilt an HTTP
+ * transport every time, which is pure overhead on a path that runs on a poll.
+ */
+const publicClients = new Map<number, TempoClient>();
+
+export function publicClientFor(network: TempoNetwork): TempoClient {
+  const existing = publicClients.get(network.chainId);
+  if (existing) return existing;
+  const client = makeClient(network);
+  publicClients.set(network.chainId, client);
+  return client;
 }
 
 export interface ReadTransfersOptions {
@@ -31,6 +47,12 @@ export interface ReadTransfersOptions {
   lookbackBlocks?: bigint;
   /** Cap on returned transfers. */
   limit?: number;
+  /**
+   * Whether to look up each transfer's block time. Settling a payment needs the
+   * recipient, the amount and the reference — not the clock — so a watcher can
+   * turn this off and skip a block read per transfer.
+   */
+  timestamps?: boolean;
 }
 
 /**
@@ -40,8 +62,11 @@ export interface ReadTransfersOptions {
  */
 const MAX_BLOCK_SPAN = 90_000n;
 
-async function getLogsChunked(
-  client: ReturnType<typeof publicClientFor>,
+/** How many chunks are read at once. The RPC is the wait, not the work. */
+const CHUNK_CONCURRENCY = 4;
+
+async function readRange(
+  client: TempoClient,
   params: {
     address: `0x${string}`;
     event: typeof TRANSFER_WITH_MEMO;
@@ -50,9 +75,9 @@ async function getLogsChunked(
   fromBlock: bigint,
   toBlock: bigint
 ): Promise<Awaited<ReturnType<typeof client.getLogs>>> {
-  const out: Awaited<ReturnType<typeof client.getLogs>> = [];
   let span = MAX_BLOCK_SPAN;
   let cursor = fromBlock;
+  const out: Awaited<ReturnType<typeof client.getLogs>> = [];
 
   while (cursor <= toBlock) {
     const end = cursor + span - 1n > toBlock ? toBlock : cursor + span - 1n;
@@ -79,6 +104,37 @@ async function getLogsChunked(
 }
 
 /**
+ * Read a block window in chunks, several at a time. A deep lookback used to be
+ * a dozen round trips in series, which is most of what made a sync feel slow.
+ */
+async function getLogsChunked(
+  client: TempoClient,
+  params: {
+    address: `0x${string}`;
+    event: typeof TRANSFER_WITH_MEMO;
+    args?: Record<string, unknown>;
+  },
+  fromBlock: bigint,
+  toBlock: bigint
+): Promise<Awaited<ReturnType<typeof client.getLogs>>> {
+  const ranges: Array<[bigint, bigint]> = [];
+  for (let start = fromBlock; start <= toBlock; start += MAX_BLOCK_SPAN) {
+    const end = start + MAX_BLOCK_SPAN - 1n > toBlock ? toBlock : start + MAX_BLOCK_SPAN - 1n;
+    ranges.push([start, end]);
+  }
+
+  const out: Awaited<ReturnType<typeof client.getLogs>> = [];
+  for (let i = 0; i < ranges.length; i += CHUNK_CONCURRENCY) {
+    const batch = ranges.slice(i, i + CHUNK_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(([from, to]) => readRange(client, params, from, to))
+    );
+    for (const logs of results) out.push(...logs);
+  }
+  return out;
+}
+
+/**
  * How far back a read should look. Tempo produces blocks quickly, so a window
  * is measured in blocks rather than days: one million blocks is roughly a
  * week. Callers that run on their own pass their own window.
@@ -87,6 +143,13 @@ export const DEFAULT_LOOKBACK = 1_000_000n;
 
 /** What the explicit "Sync from Tempo" reaches back to — roughly a month. */
 export const DEEP_LOOKBACK = 5_000_000n;
+
+/**
+ * A recent window. Reading a payment that has just landed needs only the last
+ * few hours, and a small window is a single round trip rather than a dozen —
+ * which is what lets a watcher poll quickly without hammering the RPC.
+ */
+export const RECENT_LOOKBACK = 50_000n;
 
 function lookbackWindow(head: bigint, lookback?: bigint): bigint {
   const window = lookback ?? DEFAULT_LOOKBACK;
@@ -118,6 +181,28 @@ export async function readIncomingTransfers(
   const limit = options.limit ?? 200;
   const slice = logs.slice(Math.max(0, logs.length - limit));
 
+  /*
+   * One block read per unique block — several at a time — rather than a read
+   * per transfer in series. This loop runs on a poll, so a slow tail here is
+   * the difference between a payment settling in a second and in ten.
+   */
+  const times = new Map<bigint, number>();
+  if (options.timestamps !== false) {
+    const blocks = [
+      ...new Set(slice.map((l) => l.blockNumber).filter((bn): bn is bigint => bn != null)),
+    ];
+    await Promise.all(
+      blocks.slice(0, 200).map(async (bn) => {
+        try {
+          const block = await client.getBlock({ blockNumber: bn });
+          times.set(bn, Number(block.timestamp));
+        } catch {
+          // a missing timestamp is not fatal; the row simply shows no time
+        }
+      })
+    );
+  }
+
   const transfers: IncomingTransfer[] = [];
   for (const log of slice) {
     try {
@@ -132,22 +217,13 @@ export async function readIncomingTransfers(
         value: bigint;
         memo: string;
       };
-      let timestamp: number | undefined;
-      try {
-        if (log.blockNumber != null) {
-          const block = await client.getBlock({ blockNumber: log.blockNumber });
-          timestamp = Number(block.timestamp);
-        }
-      } catch {
-        timestamp = undefined;
-      }
       transfers.push({
         from: args.from,
         to: args.to,
         amountUnits: args.value,
         memo: args.memo,
         txHash: log.transactionHash ?? "",
-        timestamp,
+        timestamp: log.blockNumber != null ? times.get(log.blockNumber) : undefined,
       });
     } catch {
       // a log that does not decode is skipped, never guessed at
