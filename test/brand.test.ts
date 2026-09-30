@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { BRAND, EXAMPLE_CARDS, FEATURES, TEMPO_COPY } from "@/lib/brand";
+import { BRAND, EXAMPLE_CARDS, FEATURES, HIGHLIGHTS, HOW_IT_WORKS, TEMPO_COPY } from "@/lib/brand";
 import { Fern, Wordmark } from "@/components/Fern";
 import { SiteFooter } from "@/components/SiteFooter";
 import {
@@ -27,7 +27,8 @@ describe("branding", () => {
     expect(html).toContain("Tempo");
     expect(BRAND.footer).toContain("batch");
     expect(BRAND.footer).toContain("memo");
-    expect(TEMPO_COPY.steps).toHaveLength(4);
+    expect(TEMPO_COPY.what.toLowerCase()).toContain("tempo");
+    expect(HOW_IT_WORKS).toHaveLength(4);
   });
 
   it("describes the whole product in one phrase", () => {
@@ -39,16 +40,47 @@ describe("branding", () => {
     expect(BRAND.oneLiner.toLowerCase()).toContain("receipt");
   });
 
-  it("says what Pinna is trying to achieve", () => {
+  it("says what Pinna is, and who it is for", () => {
     expect(TEMPO_COPY.goal.length).toBeGreaterThan(120);
+    // A payment hub built on a contact list, aimed at the receiving side.
+    expect(TEMPO_COPY.goal.toLowerCase()).toContain("payment hub");
     expect(TEMPO_COPY.goal.toLowerCase()).toContain("contact list");
+    expect(TEMPO_COPY.goal.toLowerCase()).toContain("receiving side");
     // It is about Pinna's aim, not Tempo's.
     expect(TEMPO_COPY.goal.toLowerCase()).not.toContain("tempo is betting");
   });
 
-  it("says what Pinna does on Tempo, and lists every feature", () => {
-    expect(TEMPO_COPY.onTempo.toLowerCase()).toContain("batch");
-    expect(TEMPO_COPY.onTempo.toLowerCase()).toContain("memo");
+  it("says what Tempo gives Pinna", () => {
+    expect(TEMPO_COPY.what.toLowerCase()).toContain("stablecoin");
+    expect(TEMPO_COPY.what.length).toBeGreaterThan(120);
+  });
+
+  it("lists what Pinna sells itself on", () => {
+    expect(HIGHLIGHTS.length).toBeGreaterThanOrEqual(5);
+    for (const item of HIGHLIGHTS) {
+      expect(item.title.length).toBeGreaterThan(10);
+      expect(item.body.length).toBeGreaterThan(50);
+    }
+    const text = HIGHLIGHTS.map((h) => `${h.title} ${h.body}`).join(" ").toLowerCase();
+    expect(text).toContain("one signature");
+    expect(text).toContain("custody");
+  });
+
+  it("walks through sending, receiving, requesting and reminders", () => {
+    expect(HOW_IT_WORKS.map((g) => g.title)).toEqual([
+      "Sending",
+      "Receiving",
+      "Requesting",
+      "Reminders",
+    ]);
+    for (const group of HOW_IT_WORKS) {
+      expect(group.summary.length).toBeGreaterThan(20);
+      expect(group.points.length).toBeGreaterThanOrEqual(3);
+      for (const point of group.points) expect(point.length).toBeGreaterThan(40);
+    }
+  });
+
+  it("lists every feature", () => {
     expect(FEATURES.length).toBeGreaterThanOrEqual(10);
     for (const feature of FEATURES) {
       expect(feature.title.length).toBeGreaterThan(3);
@@ -76,7 +108,7 @@ describe("branding", () => {
       "Flatmates",
       "Freelance invoice",
       "Vendor list",
-      "Friend reminder",
+      "Split a bill",
     ]);
     const names = new Set(EXAMPLE_CARDS.flatMap((c) => [...c.people]));
     expect(names.has("Franklin")).toBe(true);

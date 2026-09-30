@@ -18,18 +18,82 @@ export const BRAND = {
 } as const;
 
 export const TEMPO_COPY = {
-  what: "Tempo is a payments-first blockchain built by Stripe and Paradigm. The money on it is stablecoins, transfers settle in about half a second, and the fee is paid in the same stablecoin you are sending — so there is no separate gas token to buy first.",
+  what: "Tempo is a payments-first blockchain built by Stripe and Paradigm. The money on it is stablecoins, transfers settle in about half a second, and the fee is paid in the same stablecoin you are sending — so there is no separate gas token to buy first. That is what lets a whole list of payments leave your wallet as one transaction, each one carrying a note saying what it was for.",
   goal:
-    "Most money between people is small, repeated and social — rent, a split bill, a weekly wage, an invoice. It is still handled by hand: working out who owes what, chasing it, and forgetting which payment was for what. Pinna turns a contact list into a payment system. Keep the names, write the reason on every transfer, settle the whole list in one signature, and read the chain afterwards so nobody has to be taken on trust. It is built for the person who is always the one collecting.",
-  onTempo:
-    "A whole list — several people, several payments — leaves your wallet as one signed batch, and every row carries a memo saying what it was for. The fee is paid in the same stablecoin, so there is nothing to buy first, and the record of who was paid for what lives on the chain instead of in a spreadsheet.",
-  steps: [
-    "Add the people you pay, once.",
-    "Write a list of payments, or a request for money you are owed.",
-    "Sign once — or send a link and let them pay.",
-    "Every transfer carries its reason, so your history explains itself.",
-  ],
+    "Pinna is a simplified payment hub on Tempo — a contact list that pays. Most payments between people are small and simple, and happen several times a day. Checking a wallet to work out which payment was for what is one of the biggest reasons crypto still is not the everyday way people pay, and Pinna is here to change that. Everything you would normally do to move money, Pinna makes easier. It is built for business owners and for anyone on the receiving side of many transactions.",
 } as const;
+
+/**
+ * How Pinna works, from each side of the money. Sending and receiving are what
+ * a business actually does all day; requesting and reminders are what stops
+ * either side having to chase.
+ */
+export const HOW_IT_WORKS = [
+  {
+    title: "Sending",
+    summary: "Pay one person or fifty, in a single signature.",
+    points: [
+      "Add a row per payment — who, how much, and what for. The same person can appear on several rows on purpose.",
+      "Review groups the rows by person, but they are never merged: every row is its own transfer with its own reference.",
+      "One signature settles the whole list. The fee comes out of the same stablecoin you are sending.",
+    ],
+  },
+  {
+    title: "Receiving",
+    summary: "Know the moment money lands — and what it was for.",
+    points: [
+      "Pinna watches Tempo while the app is open, so a request turns paid seconds after the transfer arrives.",
+      "Every transfer carries its reason, so your history explains itself instead of you matching a payment to a chat message.",
+      "Sent, received and waiting export as CSV, and every payment downloads as a PDF receipt.",
+    ],
+  },
+  {
+    title: "Requesting",
+    summary: "Ask for what you are owed, and make it easy to pay.",
+    points: [
+      "Send a pay link — a public page carrying the whole request. Anyone can open it and pay in one tap, from any wallet they hold.",
+      "The transfer carries the request's reference, so the payment matches the ask by itself, whoever sends it.",
+      "A reference settles once. A second payment carrying it is flagged in History, so a double payment cannot hide.",
+    ],
+  },
+  {
+    title: "Reminders",
+    summary: "Keep track of what is still owed, without chasing.",
+    points: [
+      "Anything unpaid waits under Waiting, with a copy-ready reminder message and a pay link you can attach later.",
+      "Cancel a request while it is still open — cancelled ones stay listed, so you can always see what you called off.",
+      "Schedule repeating payments daily, weekly, monthly or yearly, each with its own note in the transfer.",
+    ],
+  },
+] as const;
+
+/** The selling points, in the order they matter. */
+export const HIGHLIGHTS = [
+  {
+    title: "One signature, the whole list",
+    body: "Fifty payments leave your wallet as a single transaction. No popup per person, and nothing left half-sent.",
+  },
+  {
+    title: "Every payment explains itself",
+    body: "The reason is written into the transfer itself, so what was paid, to whom and why is on the record — not in a spreadsheet.",
+  },
+  {
+    title: "It settles while you watch",
+    body: "A request turns paid within seconds of the transfer landing. No refreshing, no checking a wallet by hand.",
+  },
+  {
+    title: "Paid twice cannot hide",
+    body: "A reference settles once, and a second payment carrying it is flagged for refund with both transaction hashes.",
+  },
+  {
+    title: "Fees in the money you send",
+    body: "No gas token to buy first, and fees can be sponsored — so paying costs nothing beyond the amount itself.",
+  },
+  {
+    title: "Nobody holds your money",
+    body: "Your wallet signs every transfer. Pinna takes no custody, holds no key, and keeps no database of who owes whom.",
+  },
+] as const;
 
 /** Everything Pinna does, in the order someone would meet it. */
 export const FEATURES = [
@@ -121,8 +185,8 @@ export const EXAMPLE_CARDS = [
     people: ["Sophia", "Stephanie", "Franklin"],
   },
   {
-    title: "Friend reminder",
-    body: "Dinner was $18 each. Send the reminder now and take the money later — it waits under Waiting until it is paid.",
+    title: "Split a bill",
+    body: "Dinner came to $18 each. Send one request and everyone pays from their own wallet — the memo records who paid, and when, so nobody has to dig through a chat.",
     people: ["Jake", "Sophia"],
   },
 ] as const;

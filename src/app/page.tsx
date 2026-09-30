@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Fern } from "@/components/Fern";
-import { EXAMPLE_CARDS, FEATURES, TEMPO_COPY } from "@/lib/brand";
+import { EXAMPLE_CARDS, FEATURES, HIGHLIGHTS, HOW_IT_WORKS, TEMPO_COPY } from "@/lib/brand";
 import { FaqSection } from "@/components/Faq";
 
 export default function HomePage() {
@@ -61,7 +61,7 @@ export default function HomePage() {
         >
           <div>
             <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-              The network
+              What is Tempo?
             </p>
             <p className="muted" style={{ margin: 0, maxWidth: "46ch" }}>
               {TEMPO_COPY.what}
@@ -69,7 +69,7 @@ export default function HomePage() {
           </div>
           <div>
             <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-              Why Pinna exists
+              What is Pinna?
             </p>
             <p className="muted" style={{ margin: 0, maxWidth: "52ch" }}>
               {TEMPO_COPY.goal}
@@ -77,51 +77,59 @@ export default function HomePage() {
           </div>
         </div>
         <hr className="rule" />
-        <div style={{ padding: "0 0 40px" }}>
-          <p className="eyebrow" style={{ margin: "0 0 14px" }}>
-            What that gives you
-          </p>
-          <p className="muted" style={{ margin: 0, maxWidth: "62ch" }}>
-            {TEMPO_COPY.onTempo}
-          </p>
+      </section>
+
+      {/* Selling points */}
+      <section className="shell" style={{ paddingTop: 56 }}>
+        <p className="eyebrow" style={{ margin: "0 0 8px" }}>
+          Why Pinna
+        </p>
+        <div className="features">
+          {HIGHLIGHTS.map((item) => (
+            <article key={item.title} className="feature-item">
+              <h3 style={{ margin: 0, fontSize: "1.02rem", fontWeight: 550 }}>{item.title}</h3>
+              <p className="muted" style={{ margin: "6px 0 0", fontSize: "0.94rem" }}>
+                {item.body}
+              </p>
+            </article>
+          ))}
         </div>
-        <hr className="rule" />
       </section>
 
       {/* How Pinna works */}
-      <section className="shell" style={{ paddingTop: 56 }}>
-        <p className="eyebrow" style={{ margin: "0 0 30px" }}>
+      <section className="shell" style={{ paddingTop: 72 }}>
+        <hr className="rule" />
+        <p className="eyebrow" style={{ margin: "32px 0 4px" }}>
           How Pinna works
         </p>
-        <ol
-          style={{
-            listStyle: "none",
-            padding: 0,
-            margin: 0,
-            display: "grid",
-            gap: 0,
-            gridTemplateColumns: "minmax(0,1fr)",
-          }}
-          className="steps"
+        <h2 className="display" style={{ fontSize: "clamp(1.6rem, 3.4vw, 2.3rem)", margin: "0 0 28px" }}>
+          From each side of the money.
+        </h2>
+        <div
+          className="how-grid"
+          style={{ display: "grid", gap: 36, gridTemplateColumns: "minmax(0,1fr)" }}
         >
-          {TEMPO_COPY.steps.map((step, i) => (
-            <li
-              key={step}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "64px minmax(0,1fr)",
-                alignItems: "baseline",
-                padding: "20px 0",
-                borderTop: "1px solid var(--hairline)",
-              }}
+          {HOW_IT_WORKS.map((group) => (
+            <article
+              key={group.title}
+              style={{ borderTop: "1px solid var(--hairline)", paddingTop: 20 }}
             >
-              <span className="display faint" style={{ fontSize: "1.6rem" }}>
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <span style={{ fontSize: "1.05rem" }}>{step}</span>
-            </li>
+              <h3 className="display" style={{ fontSize: "1.45rem", margin: "0 0 6px" }}>
+                {group.title}
+              </h3>
+              <p className="faint" style={{ margin: "0 0 14px", fontSize: "0.86rem" }}>
+                {group.summary}
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 10 }}>
+                {group.points.map((point) => (
+                  <li key={point} className="muted" style={{ fontSize: "0.94rem" }}>
+                    {point}
+                  </li>
+                ))}
+              </ul>
+            </article>
           ))}
-        </ol>
+        </div>
       </section>
 
       {/* Example cards */}
@@ -188,7 +196,7 @@ export default function HomePage() {
         @media (min-width: 900px) {
           .masthead { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr) !important; }
           .two-col { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 64px !important; }
-          .steps { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; column-gap: 64px !important; }
+          .how-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; column-gap: 64px !important; }
         }
       `}</style>
     </div>
